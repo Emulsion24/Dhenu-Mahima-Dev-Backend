@@ -60,8 +60,8 @@ export const getAllGopal = async (req, res) => {
 
 // Get single GopalPariwar by ID
 export const getGopalById = async (req, res) => {
-  const { id } = req.query;
-  const idInt = parseInt(id);
+    const   idInt = parseInt(req.params.id, 10);
+
 if (isNaN(idInt)) {
   return res.status(400).json({ error: "Invalid ID" });
 }

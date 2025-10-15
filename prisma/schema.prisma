@@ -176,6 +176,7 @@ model GopalPariwar {
 model Gaushala {
   id             Int      @id @default(autoincrement())
   name           String
+  photo          String?
   address        String
   establishmentYear Int
   contactDetails String
@@ -390,4 +391,20 @@ model FoundationMedia {
   foundation   Foundation? @relation(fields: [foundationId], references: [id], onDelete: Cascade)
 
   @@map("foundation_media")
+}
+model Event {
+  id          Int      @id @default(autoincrement())
+  title       String
+  startDate   DateTime
+  endDate     DateTime
+  time        String?
+  location    String
+  duration    String   // e.g., "5 दिवसीय", "1 दिवसीय"
+  color       String   @default("from-orange-500 to-red-500")
+  liveLinks   Json?  
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([endDate])
 }

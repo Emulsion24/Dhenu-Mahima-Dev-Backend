@@ -154,6 +154,7 @@ export async function resetPassword(req, res) {
 
 // 🧑 CHECK AUTH
 export async function checkAuth(req, res) {
+
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ message: "Not authenticated" });
 

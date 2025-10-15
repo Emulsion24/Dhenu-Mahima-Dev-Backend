@@ -10,6 +10,9 @@ import landingRoutes from "./routes/landigPage.js"
 import userRoutes from "./routes/user.js"
 import useFoundationRoute from "./routes/foundation.js"
 import useGopalPariwarRoutes from "./routes/gopalpariwar.js"
+import useGaushala from "./routes/gaushala.js"
+import useSangstanRoute from "./routes/sangsthan.js"
+import useEventsRoute from "./routes/events.js"
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -38,6 +41,9 @@ app.use("/api",landingRoutes);
 app.use("/api/admin",userRoutes);
 app.use("/api/admin/foundation",useFoundationRoute);
 app.use("/api/admin/gopalpariwar",useGopalPariwarRoutes);
+app.use('/api/gaushalas',useGaushala);
+app.use('/api/sansthans',useSangstanRoute);
+app.use('/api/events',useEventsRoute);
 
 // Default route
 app.get('/', (req, res) => res.send('🚀 API Running'));
