@@ -10,7 +10,7 @@ export const getAllSansthans = async (req, res) => {
     });
     
     res.status(200).json({
-      success: true,
+      success: true,        
       count: sansthans.length,
       data: sansthans
     });

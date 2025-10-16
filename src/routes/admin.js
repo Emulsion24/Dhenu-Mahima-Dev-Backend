@@ -1,13 +1,13 @@
 import express from "express";
 import { verifyToken,requireRole } from "../middleware/authMiddleware.js";
 import { uploadBanner ,deleteBanner, deleteDirectorMessage, addDirectorMessage, getDirectorMessage, reorderBanners} from "../controllers/adminController.js";
-import upload from "../middleware/multerMiddleware.js";
+import {uploadImage,uploadAudio} from "../middleware/multerMiddleware.js";
 import { addCard, deleteCard, editCard, getCards, reorderCards } from "../controllers/cardController.js";
 
 
 const router=express.Router();
 router.put("/banners/reorder",verifyToken,requireRole("admin"),reorderBanners);
-router.post("/banners/upload",verifyToken, requireRole("admin"), upload.single("file"),uploadBanner);
+router.post("/banners/upload",verifyToken, requireRole("admin"), uploadImage.single("file"),uploadBanner);
 
 router.post("/message/upload",verifyToken, requireRole("admin"), addDirectorMessage);
 router.delete("/delete-message/:id", verifyToken, requireRole("admin"),deleteDirectorMessage);

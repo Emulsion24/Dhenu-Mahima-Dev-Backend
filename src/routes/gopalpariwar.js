@@ -1,6 +1,6 @@
 // routes/gopalPariwar.routes.js
 import express from 'express';
-import upload from '../middleware/multerMiddleware.js';
+import {uploadImage} from '../middleware/multerMiddleware.js';
 import {
   createGopal,
   getAllGopal,
@@ -20,8 +20,8 @@ router.get('/', getAllGopal);
 router.get('/:id', getGopalById);
 
 // Protected routes - Require authentication and admin role
-router.post('/create',upload.single("photo"), verifyToken, requireRole("admin"), createGopal);
-router.put('/update/:id',upload.single("photo"), verifyToken, requireRole("admin"), updateGopal);
+router.post('/create',uploadImage.single("photo"), verifyToken, requireRole("admin"), createGopal);
+router.put('/update/:id',uploadImage.single("photo"), verifyToken, requireRole("admin"), updateGopal);
 router.delete('/delete/:id', verifyToken, requireRole("admin"), deleteGopal);
 
 export default router;

@@ -1,45 +1,59 @@
-import multer from "multer";
-import path from "path";
-import fs from "fs";
+import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 
-// Temporary upload directory
-const uploadDir = "./uploads";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Create folder if doesn't exist
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Image upload setup
+const imageDir = path.join(__dirname, '..', 'uploads', 'images');
+if (!fs.existsSync(imageDir)) fs.mkdirSync(imageDir, { recursive: true });
 
-// Multer storage configuration
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + "-" + uniqueSuffix + ext);
+const imageStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, imageDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, 'image-' + uniqueSuffix + path.extname(file.originalname));
   },
 });
 
-// File filter: allow only images
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|webp/;
-  const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mime = allowedTypes.test(file.mimetype);
-
-  if (ext && mime) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only image files are allowed (jpg, jpeg, png, webp)!"));
-  }
+const imageFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|gif|webp/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+  if (mimetype && extname) return cb(null, true);
+  cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
 };
 
-// Export configured multer instance
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // max 5 MB
+export const uploadImage = multer({
+  storage: imageStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: imageFilter,
 });
 
-export default upload;
+// Audio upload setup
+const audioDir = path.join(__dirname, '..', 'uploads', 'audio');
+if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true });
+
+const audioStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, audioDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, 'audio-' + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const audioFilter = (req, file, cb) => {
+  const allowedTypes = /mp3|wav|mpeg/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+  if (mimetype && extname) return cb(null, true);
+  cb(new Error('Only audio files are allowed (mp3, wav, mpeg)'));
+};
+
+export const uploadAudio = multer({
+  storage: audioStorage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter: audioFilter,
+});

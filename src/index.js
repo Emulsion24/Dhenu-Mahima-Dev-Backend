@@ -13,11 +13,18 @@ import useGopalPariwarRoutes from "./routes/gopalpariwar.js"
 import useGaushala from "./routes/gaushala.js"
 import useSangstanRoute from "./routes/sangsthan.js"
 import useEventsRoute from "./routes/events.js"
+import useNewsRoute from "./routes/news.js"
+import usejevansutraRoute from "./routes/jevansutra.js"
 import { errorHandler } from './middleware/errorHandler.js';
-
+import path from "path";
+import { fileURLToPath } from "url";
 dotenv.config();
 const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+// 👇 Serve static uploads folder
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
 app.use(cookieParser());
 app.use(helmet());
@@ -44,6 +51,8 @@ app.use("/api/admin/gopalpariwar",useGopalPariwarRoutes);
 app.use('/api/gaushalas',useGaushala);
 app.use('/api/sansthans',useSangstanRoute);
 app.use('/api/events',useEventsRoute);
+app.use('/api/news',useNewsRoute );
+app.use('/api/jevansutra',usejevansutraRoute );
 
 // Default route
 app.get('/', (req, res) => res.send('🚀 API Running'));
