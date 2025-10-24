@@ -14,6 +14,7 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^6.17.1",
+    "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.7.0",
     "compression": "^1.8.1",
@@ -33,6 +34,7 @@
     "mysql2": "^3.15.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.9",
+    "pg-sdk-node": "https://phonepe.mycloudrepo.io/public/repositories/phonepe-pg-sdk-node/releases/v2/phonepe-pg-sdk-node.tgz",
     "redis": "^5.8.3"
   },
   "devDependencies": {

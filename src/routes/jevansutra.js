@@ -14,7 +14,8 @@ import {upload} from '../middleware/upload.js';
 import { requireRole, verifyToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
-
+// 📌 Search
+router.get("/search",searchBhajans);
 // 📌 CRUD Routes
 router.get('/', getAllBhajans);
 router.get('/:id', getBhajanById);
@@ -34,7 +35,6 @@ router.delete('/:id', verifyToken,requireRole("admin"),deleteBhajan);
 router.get('/audio/stream/:filename', streamAudio);
 router.get('/audio/download/:filename',verifyToken,requireRole("admin"), downloadAudio);
 
-// 📌 Search
-router.get('/search', searchBhajans);
+
 
 export default router;

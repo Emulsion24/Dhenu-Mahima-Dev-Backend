@@ -175,7 +175,7 @@ export const deleteBhajan = async (req, res) => {
 export const streamAudio = async (req, res) => {
   try {
     const { filename } = req.params;
-    console.log(filename)
+
     const audioPath = path.join(__dirname, '../uploads/audio', filename);
 
     const stat = await fs.stat(audioPath);
@@ -226,14 +226,15 @@ export const downloadAudio = async (req, res) => {
 export const searchBhajans = async (req, res) => {
   try {
     const { query } = req.query;
+
     if (!query) return res.status(400).json({ message: 'Search query is required' });
 
     const bhajans = await prisma.bhajan.findMany({
       where: {
         OR: [
-          { name: { contains: query, mode: 'insensitive' } },
-          { artist: { contains: query, mode: 'insensitive' } },
-          { album: { contains: query, mode: 'insensitive' } },
+          { name: { contains: query} },
+          { artist: { contains: query} },
+          { album: { contains: query} },
         ],
       },
       orderBy: { createdAt: 'desc' },

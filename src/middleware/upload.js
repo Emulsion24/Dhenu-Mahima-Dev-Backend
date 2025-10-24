@@ -34,6 +34,10 @@ const fileFilter = (req, file, cb) => {
     const allowed = /jpeg|jpg|png|gif|webp/;
     if (allowed.test(path.extname(file.originalname).toLowerCase()) && allowed.test(file.mimetype)) return cb(null, true);
     return cb(new Error('Only image files are allowed (jpeg, jpg, png, gif, webp)'));
+  }else if (file.fieldname === 'pdf') {
+    const allowed = /pdf/;
+    if (allowed.test(path.extname(file.originalname).toLowerCase()) && allowed.test(file.mimetype)) return cb(null, true);
+    return cb(new Error('Only image files are allowed (pdf)'));
   }
   cb(null, true);
 };

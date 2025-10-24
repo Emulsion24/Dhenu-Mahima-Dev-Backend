@@ -28,39 +28,15 @@ model User {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
+
+  bookOrders    BookOrder[]
+  bookPurchases BookPurchase[]
   donations  Donation[]
-  pdfOrders  PdfOrder[]
-  accounts   Account[]
-  sessions   Session[]
   payments   Payment[]
 }
 
-model Account {
-  id                Int     @id @default(autoincrement())
-  userId            Int
-  providerType      String
-  providerId        String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
 
-  user User @relation(fields: [userId], references: [id])
 
-  @@index([providerId, providerAccountId], name: "provider_idx")
-}
-
-model Session {
-  id           Int      @id @default(autoincrement())
-  sessionToken String   @unique
-  userId       Int
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id])
-}
 
 //////////////////////////////
 // DONATIONS
@@ -72,7 +48,7 @@ model Donation {
   amount        Float
   status        String   @default("pending") // pending | success | failed
   paymentMethod String? // phonepe | stripe | etc.
-  transactionId String?
+  transactionId String  @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -83,33 +59,107 @@ model Donation {
 // PDF BOOKS & ORDERS
 //////////////////////////////
 
-model PdfBook {
+// Book Model - Stores PDF book information
+model Book {
   id          Int      @id @default(autoincrement())
-  title       String
-  description String?
-  price       Float
-  pdfUrl      String
+  name        String   @db.VarChar(255)
+  author      String   @db.VarChar(255)
+  fileName    String   @db.VarChar(255)   // Stored PDF filename
+  filePath    String   @db.VarChar(500)   // Server path to PDF
+  fileSize    String   @db.VarChar(50)    // e.g., "2.5 MB"
+  price       Float    @db.Double
+  description String?  @db.Text
+  coverImage  String?  @db.VarChar(255)   // Cover image filename
+  uploadDate  DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  orders PdfOrder[]
+  purchases   BookPurchase[]
+  orderItems  BookOrderItem[]
+
+  @@map("books")
+  @@index([name])
+  @@index([author])
 }
 
-model PdfOrder {
+// Coupon Model - Discount codes
+model BookCoupon {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(50)
+  discount    Float    @db.Double
+  type        String   @db.VarChar(20)    // "PERCENTAGE" or "FIXED"
+  description String?  @db.Text
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders BookOrder[]
+
+  @@map("book_coupons")
+  @@index([code])
+  @@index([active])
+}
+
+// Order Model - Payment orders
+model BookOrder {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  totalAmount     Float    @db.Double
+  discountAmount  Float    @default(0) @db.Double
+  finalAmount     Float    @db.Double
+  couponId        Int?
+  paymentId       String?  @db.VarChar(255)  // Razorpay payment ID
+  orderId         String?  @db.VarChar(255)  // Razorpay order ID
+  status          String   @default("PENDING") @db.VarChar(20) // PENDING | COMPLETED | FAILED | REFUNDED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coupon    BookCoupon?     @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  items     BookOrderItem[]
+  purchases BookPurchase[]
+
+  @@map("book_orders")
+  @@index([userId])
+  @@index([status])
+  @@index([orderId])
+}
+
+// Order Items - Books in each order
+model BookOrderItem {
+  id       Int   @id @default(autoincrement())
+  orderId  Int
+  bookId   Int
+  price    Float @db.Double
+
+  order BookOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  book  Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@map("book_order_items")
+  @@index([orderId])
+  @@index([bookId])
+}
+
+// Purchase Model - User's purchased books (Access Control)
+model BookPurchase {
   id            Int      @id @default(autoincrement())
   userId        Int
-  pdfBookId     Int
-  quantity      Int      @default(1)
-  totalPrice    Float
-  status        String   @default("pending") // pending | paid | failed | refunded
-  paymentMethod String?
-  transactionId String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  bookId        Int
+  orderId       Int
+  purchaseDate  DateTime @default(now())
+  accessGranted Boolean  @default(true)
 
-  user    User    @relation(fields: [userId], references: [id])
-  pdfBook PdfBook @relation(fields: [pdfBookId], references: [id])
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book  Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  order BookOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@map("book_purchases")
+  @@index([userId])
+  @@index([bookId])
+  @@index([accessGranted])
 }
+
 
 //////////////////////////////
 // PAYMENT LOGS

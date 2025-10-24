@@ -15,24 +15,43 @@ import useSangstanRoute from "./routes/sangsthan.js"
 import useEventsRoute from "./routes/events.js"
 import useNewsRoute from "./routes/news.js"
 import usejevansutraRoute from "./routes/jevansutra.js"
+import usebooksRoute from "./routes/books.js"
+import usecouponRoute from "./routes/coupon.js"
+import donationRoutes from "./routes/donation.js"
+
 import { errorHandler } from './middleware/errorHandler.js';
 import path from "path";
 import { fileURLToPath } from "url";
+
 dotenv.config();
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 👇 Serve static uploads folder
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use(express.json());
-app.use(cookieParser());
-app.use(helmet());
+// ✅ CORS Configuration - MUST BE BEFORE OTHER MIDDLEWARE
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "",
+  origin: process.env.FRONTEND_URL || "http://localhost:3000",
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'Accept'],
+  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges']
 }));
 
+// ✅ Parse JSON and URL-encoded data
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// ✅ Helmet with modified CSP for audio/video streaming
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // 🔥 Important for audio streaming
+  contentSecurityPolicy: false // Disable CSP or configure it properly
+}));
+
+// 👇 Serve static uploads folder with CORS
+app.use("/uploads", cors(), express.static(path.join(__dirname, "uploads")));
+app.use(express.urlencoded({ extended: true }));
+// Rate limiting
 const limiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 10,
@@ -42,17 +61,22 @@ app.use('/api/auth/signup', limiter);
 app.use('/api/auth/verify-otp', limiter);
 app.use('/api/auth/forgot-password', limiter);
 
+// Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/admin',adminRoutes );
-app.use("/api",landingRoutes);
-app.use("/api/admin",userRoutes);
-app.use("/api/admin/foundation",useFoundationRoute);
-app.use("/api/admin/gopalpariwar",useGopalPariwarRoutes);
-app.use('/api/gaushalas',useGaushala);
-app.use('/api/sansthans',useSangstanRoute);
-app.use('/api/events',useEventsRoute);
-app.use('/api/news',useNewsRoute );
-app.use('/api/jevansutra',usejevansutraRoute );
+app.use('/api/admin', adminRoutes);
+app.use("/api", landingRoutes);
+app.use("/api/admin", userRoutes);
+app.use("/api/admin/foundation", useFoundationRoute);
+app.use("/api/admin/gopalpariwar", useGopalPariwarRoutes);
+app.use('/api/gaushalas', useGaushala);
+app.use('/api/sansthans', useSangstanRoute);
+app.use('/api/events', useEventsRoute);
+app.use('/api/news', useNewsRoute);
+app.use('/api/jevansutra', usejevansutraRoute);
+app.use('/api/books', usebooksRoute);
+app.use('/api/coupons', usecouponRoute);
+app.use('/api/donations', donationRoutes);
+
 
 // Default route
 app.get('/', (req, res) => res.send('🚀 API Running'));
