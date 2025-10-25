@@ -45,6 +45,8 @@ model User {
 model Donation {
   id            Int      @id @default(autoincrement())
   userId        Int
+  email         String?
+  pan           String?
   amount        Float
   status        String   @default("pending") // pending | success | failed
   paymentMethod String? // phonepe | stripe | etc.
@@ -284,33 +286,68 @@ model DtaSanssthan {
 //////////////////////////////
 
 model PrivacyPolicy {
-  id            Int      @id @default(autoincrement())
-  title         String
-  subtitle      String?
-  sections      Json      // Array of sections { title: String, content: String }
-  email         String?
-  phone         String?
-  callingHours  String?    // e.g., "10:00 AM - 6:00 PM"
-  mailingAddress String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          Int       @id @default(autoincrement())
+  title       String
+  subtitle    String
+  lastUpdated DateTime
+  sections    Section[]
+  contact     Contact   @relation(fields: [contactId], references: [id])
+  contactId   Int      @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Section {
+  id         Int       @id @default(autoincrement())
+  privacyPolicyId Int
+  title      String
+  content    String    @db.Text
+  order      Int
+  privacyPolicy PrivacyPolicy @relation(fields: [privacyPolicyId], references: [id])
+}
+
+model Contact {
+  id         Int       @id @default(autoincrement())
+  email      String
+  phone      String
+  phoneHours String
+  address    String    @db.Text
+  privacyPolicy PrivacyPolicy?
 }
 //////////////////////////////
 // TERMS AND CONDITIONS
 //////////////////////////////
 
 model TermsConditions {
-  id            Int      @id @default(autoincrement())
-  title         String
-  subtitle      String?
-  sections      Json      // Array of sections { title: String, content: String }
-  email         String?
-  phone         String?
-  callingHours  String?    // e.g., "10:00 AM - 6:00 PM"
-  mailingAddress String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          Int                     @id @default(autoincrement())
+  title       String
+  subtitle    String
+  lastUpdated DateTime
+  sections    TermsConditionsSection[]
+  contact     TermsConditionsContact  @relation(fields: [contactId], references: [id])
+  contactId   Int                     @unique
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
 }
+
+model TermsConditionsSection {
+  id                  Int              @id @default(autoincrement())
+  termsConditionsId   Int
+  title               String
+  content             String           @db.Text
+  order               Int
+  termsConditions     TermsConditions  @relation(fields: [termsConditionsId], references: [id])
+}
+
+model TermsConditionsContact {
+  id               Int               @id @default(autoincrement())
+  email            String
+  phone            String
+  phoneHours       String
+  address          String            @db.Text
+  termsConditions  TermsConditions?
+}
+
 //////////////////////////////
 // BANNERS
 //////////////////////////////
@@ -512,3 +549,24 @@ model Gaumatabhajan {
   @@index([artist])
   @@index([categoryId])
 }
+
+
+model MembershipPayment {
+  id              String   @id @default(cuid())
+  userId           Int
+  name            String
+  email           String
+  phone           String
+  address         String
+  city            String
+  state           String
+  pincode         String
+  membershipType  String
+  amount          Int
+  status          String   @default("pending")
+  transactionId   String   @unique
+  paymentMethod   String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+

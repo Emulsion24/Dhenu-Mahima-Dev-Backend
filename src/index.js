@@ -20,7 +20,11 @@ import usecouponRoute from "./routes/coupon.js"
 import donationRoutes from "./routes/donation.js"
 import usegauMataBhajanRoute from "./routes/gaumataBhajan.js"
 import GaumataCatagoryRoute from "./routes/catagory.js"
-
+import privacyPolicyRoutes from "./routes/privacyPolicy.js"
+import messageRoute from "./routes/messagesend.js"
+import gauKathamessageRoute from "./routes/gaukathamessage.js"
+import termsConditionsRoutes from "./routes/termsandcondition.js"
+import membershipRoutes from "./routes/magazinepayment.js"
 import { errorHandler } from './middleware/errorHandler.js';
 import path from "path";
 import { fileURLToPath } from "url";
@@ -79,8 +83,12 @@ app.use('/api/gaumata-bhajans', usegauMataBhajanRoute);
 app.use('/api/books', usebooksRoute);
 app.use('/api/coupons', usecouponRoute);
 app.use('/api/donations', donationRoutes);
+app.use('/api/membership', membershipRoutes);
 app.use("/api/gaumata-categories",GaumataCatagoryRoute);
-
+app.use("/api/privacy-policy", privacyPolicyRoutes);
+app.use("/api/terms-conditions",termsConditionsRoutes);
+app.use("/api",messageRoute);
+app.use("/api/message-submit",gauKathamessageRoute);
 // Default route
 app.get('/', (req, res) => res.send('🚀 API Running'));
 

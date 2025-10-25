@@ -5,13 +5,194 @@ import { MetaInfo, StandardCheckoutPayRequest } from "pg-sdk-node";
 import phonePe from "../utils/phonepeClient.js"; // PhonePe SDK instance
 
 dotenv.config();
+const getDonationFilters = (query) => {
+  const { search, status, timePeriod } = query;
+  const where = {};
+
+  // 1. Status Filter
+  if (status && status !== 'All') {
+    where.status = status;
+  }
+
+  // 2. Time Period Filter
+  if (timePeriod && timePeriod !== 'All Time') {
+    const today = new Date();
+    let startDate;
+
+    switch (timePeriod) {
+      case 'Weekly':
+        startDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'Monthly':
+        startDate = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+        break;
+      case 'Yearly':
+        startDate = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+        break;
+      default:
+        startDate = null;
+    }
+    
+    if (startDate) {
+      where.createdAt = {
+        gte: startDate,
+      };
+    }
+  }
+
+  // 3. Search Filter
+  // This searches transactionId, email, and the related user's name.
+  if (search) {
+    where.OR = [
+      { transactionId: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+      { user: {
+          name: { contains: search, mode: 'insensitive' },
+        },
+      },
+    ];
+  }
+
+  return where;
+};
+
+
+export const getAllDonations = async (req, res) => {
+  try {
+    // 1️⃣ Fetch 10 most recent donations first
+    let recentDonations = await prisma.donation.findMany({
+      orderBy: { createdAt: 'desc' },
+ 
+      include: {
+        user: { select: { name: true } },
+      },
+    });
+
+    // 2️⃣ Apply filters on these 10 donations
+    const { search, status, timePeriod } = req.query;
+    let filteredDonations = recentDonations;
+
+    if (status && status !== 'All') {
+      filteredDonations = filteredDonations.filter(d => d.status.toLowerCase() === status.toLowerCase());
+    }
+
+    if (timePeriod && timePeriod !== 'All Time') {
+      const today = new Date();
+      let startDate;
+
+      switch (timePeriod) {
+        case 'Weekly':
+          startDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'Monthly':
+          startDate = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+          break;
+        case 'Yearly':
+          startDate = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+          break;
+        default:
+          startDate = null;
+      }
+
+      if (startDate) {
+        filteredDonations = filteredDonations.filter(d => new Date(d.createdAt) >= startDate);
+      }
+    }
+
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredDonations = filteredDonations.filter(d => 
+        d.transactionId.toLowerCase().includes(searchLower) ||
+        (d.email && d.email.toLowerCase().includes(searchLower)) ||
+        (d.user?.name && d.user.name.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // 3️⃣ Format for frontend
+    const formattedDonations = filteredDonations.map(d => ({
+      id: d.id,
+      transactionId: d.transactionId,
+      name: d.user.name,
+      amount: d.amount,
+      email: d.email,
+      date: new Date(d.createdAt).toISOString().split('T')[0],
+      time: new Date(d.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      paymentMethod: d.paymentMethod,
+      cardLast4: d.pan,
+      status: d.status,
+    }));
+
+    res.status(200).json(formattedDonations);
+
+  } catch (error) {
+    console.error('Error fetching donations:', error);
+    res.status(500).json({ message: 'Error fetching donations', error: error.message });
+  }
+};
+
+/**
+ * @desc    Get donation statistics
+ * @route   GET /api/donations/stats
+ * @access  Private
+ */
+export const getDonationStats = async (req, res) => {
+  try {
+    const where = getDonationFilters(req.query);
+
+    // 1. Total Donations (Amount)
+    const totalAmountResult = await prisma.donation.aggregate({
+      _sum: {
+        amount: true,
+      },
+      where,
+    });
+    const totalDonations = totalAmountResult._sum.amount || 0;
+
+    // 2. Total Donors (Count of donations, as per your frontend logic)
+    const totalDonors = await prisma.donation.count({
+      where,
+    });
+    
+    // (Optional) If you want UNIQUE donors:
+    // const uniqueDonorsResult = await prisma.donation.findMany({
+    //   where,
+    //   distinct: ['userId']
+    // });
+    // const totalUniqueDonors = uniqueDonorsResult.length;
+
+
+    // 3. Successful Donations
+    const successfulDonations = await prisma.donation.count({
+      where: {
+        ...where,
+        status: 'Success',
+      },
+    });
+
+    res.status(200).json({
+      totalDonations,
+      totalDonors, // This is the count of donations, matching your frontend
+      successfulDonations,
+    });
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({ message: 'Error fetching stats', error: error.message });
+  }
+};
+
+
+
+
+
+
 
 /**
  * Create Donation
  */
 export const createDonation = async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount,email,pan } = req.body;
+
     const userId = req.user?.id; // from verifyToken
 
     if (!amount || amount < 1) {
@@ -49,6 +230,8 @@ export const createDonation = async (req, res) => {
         status: "pending",
         paymentMethod: "phonepe",
         transactionId: merchantOrderId,
+        email,
+        pan,
       },
     });
 
