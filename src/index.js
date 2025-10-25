@@ -18,6 +18,8 @@ import usejevansutraRoute from "./routes/jevansutra.js"
 import usebooksRoute from "./routes/books.js"
 import usecouponRoute from "./routes/coupon.js"
 import donationRoutes from "./routes/donation.js"
+import usegauMataBhajanRoute from "./routes/gaumataBhajan.js"
+import GaumataCatagoryRoute from "./routes/catagory.js"
 
 import { errorHandler } from './middleware/errorHandler.js';
 import path from "path";
@@ -73,10 +75,11 @@ app.use('/api/sansthans', useSangstanRoute);
 app.use('/api/events', useEventsRoute);
 app.use('/api/news', useNewsRoute);
 app.use('/api/jevansutra', usejevansutraRoute);
+app.use('/api/gaumata-bhajans', usegauMataBhajanRoute);
 app.use('/api/books', usebooksRoute);
 app.use('/api/coupons', usecouponRoute);
 app.use('/api/donations', donationRoutes);
-
+app.use("/api/gaumata-categories",GaumataCatagoryRoute);
 
 // Default route
 app.get('/', (req, res) => res.send('🚀 API Running'));
