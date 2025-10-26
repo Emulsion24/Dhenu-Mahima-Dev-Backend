@@ -20,10 +20,10 @@ transporter.verify((error, success) => {
 
 export const submitGauKathaBooking = async (req, res) => {
   try {
-    const { name, contact, state, city } = req.body;
+    const { name, contact, state, city,email } = req.body;
 
     // Validate required fields
-    if (!name || !contact || !state || !city) {
+    if (!name || !contact || !state || !city||!email) {
       return res.status(400).json({ 
         error: 'सभी फ़ील्ड आवश्यक हैं / All fields are required',
         success: false 
@@ -66,7 +66,8 @@ Name: ${name}
 Contact: +91 ${contact}
 State: ${state}
 City/Village: ${city}
-Booking ID: ${bookingId}
+Email:${email}
+
 
 Please contact the applicant to schedule the Gau Katha.
       `,

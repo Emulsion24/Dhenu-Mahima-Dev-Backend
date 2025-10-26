@@ -1,17 +1,17 @@
 import express from "express";
 import { verifyToken, requireRole } from "../middleware/authMiddleware.js";
 
-import { createMembershipPayment, membershipPaymentCallback, phonePeMembershipWebhook } from "../controllers/magazinePaymentController.js";
+import {  checkSubscriptionOrderStatus, createSubscription, getAllSubscriptions } from "../controllers/magazinePaymentController.js";
 
 const router = express.Router();
 
 
-router.post("/create-order", verifyToken, requireRole("user"), createMembershipPayment);
+router.post("/create-order", verifyToken, requireRole("user"), createSubscription);
 
 
-router.post("/webhook", phonePeMembershipWebhook);
 
 
-router.get("/callback", membershipPaymentCallback);
+router.get("/callback", checkSubscriptionOrderStatus);
+router.get("/", verifyToken, requireRole("admin"),getAllSubscriptions);
 
 export default router;
