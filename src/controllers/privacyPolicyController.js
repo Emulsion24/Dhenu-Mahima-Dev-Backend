@@ -19,8 +19,7 @@ export const getPolicy = async (req, res) => {
 export const savePolicy = async (req, res) => {
   try {
     const { title, subtitle, lastUpdated, contact, sections } = req.body;
-    console.log("Received Policy Data:", req.body);
-
+  
     // 🗑️ Delete all existing privacy policies, sections, and contacts
     await prisma.section.deleteMany({});
     await prisma.privacyPolicy.deleteMany({});

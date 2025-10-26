@@ -302,15 +302,17 @@ export const toggleCouponStatus = async (req, res) => {
 // VALIDATE COUPON (Public for users during checkout)
 export const validateCoupon = async (req, res) => {
   try {
-    const { code, totalAmount } = req.body;
+    const { code, bookId } = req.body;
+        
 
-    if (!code) {
+    if (!code || !bookId) {
       return res.status(400).json({
         success: false,
-        message: 'Coupon code is required'
+        message: 'Coupon code and bookId are required'
       });
     }
 
+    // Fetch the coupon
     const coupon = await prisma.bookCoupon.findUnique({
       where: { code: code.toUpperCase() }
     });
@@ -328,6 +330,20 @@ export const validateCoupon = async (req, res) => {
         message: 'This coupon is no longer active'
       });
     }
+
+    // Fetch the book to get its price
+    const book = await prisma.book.findUnique({
+      where: { id: parseInt( bookId)}
+    });
+
+    if (!book) {
+      return res.status(404).json({
+        success: false,
+        message: 'Book not found'
+      });
+    }
+
+    const totalAmount = book.price;
 
     // Calculate discount
     let discountAmount = 0;

@@ -25,6 +25,8 @@ import messageRoute from "./routes/messagesend.js"
 import gauKathamessageRoute from "./routes/gaukathamessage.js"
 import termsConditionsRoutes from "./routes/termsandcondition.js"
 import membershipRoutes from "./routes/magazinepayment.js"
+import userdataRoutes from "./routes/userData.js"
+import pdfPaymentRoutes from "./routes/pdfPayment.js"
 import { errorHandler } from './middleware/errorHandler.js';
 import path from "path";
 import { fileURLToPath } from "url";
@@ -72,6 +74,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use("/api", landingRoutes);
 app.use("/api/admin", userRoutes);
+app.use("/api/users", userdataRoutes);
 app.use("/api/admin/foundation", useFoundationRoute);
 app.use("/api/admin/gopalpariwar", useGopalPariwarRoutes);
 app.use('/api/gaushalas', useGaushala);
@@ -89,6 +92,7 @@ app.use("/api/privacy-policy", privacyPolicyRoutes);
 app.use("/api/terms-conditions",termsConditionsRoutes);
 app.use("/api",messageRoute);
 app.use("/api/message-submit",gauKathamessageRoute);
+app.use("/api/pdf-payment",pdfPaymentRoutes);
 // Default route
 app.get('/', (req, res) => res.send('🚀 API Running'));
 

@@ -323,6 +323,7 @@ export const streamPdf = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
+    console.log(id)
 
     // Check if user purchased this book
     const purchase = await prisma.bookPurchase.findUnique({

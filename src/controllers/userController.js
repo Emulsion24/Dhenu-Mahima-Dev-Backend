@@ -369,3 +369,50 @@ export async function updateUserRole(req, res) {
     });
   }
 }
+
+export const getUserData = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id: Number(userId) },
+      include: {
+        donations: true,
+        bookPurchases: {
+          include: {
+            book: true,   // Include actual book details
+            // Optional, if you want order info
+          },
+        },
+      },
+    });
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Transform bookPurchases for frontend
+    const purchasedBooks = user.bookPurchases.map((p) => ({
+      id: p.bookId,
+      title: p.book.name,          // correct mapping
+      author: p.book.author,
+      price: p.book.price,
+    
+      coverImage: p.book.coverImage,
+      purchasedAt: p.purchaseDate, // correct mapping
+      
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        donations: user.donations,
+        purchasedBooks,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
