@@ -75,9 +75,9 @@ export async function login(req, res) {
 
     // Set token in HttpOnly cookie
 res.cookie('token', token, {
-  httpOnly: true,
-   secure: true, // required for cross-site cookies on HTTPS (ngrok)
-  sameSite: "None",
+httpOnly: true,
+  secure: false,
+  sameSite: "lax",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 });
 
@@ -93,9 +93,9 @@ res.cookie('token', token, {
 // 🚪 LOGOUT
 export async function logout(req, res) {
   res.clearCookie('token', {
-  httpOnly: true,
- secure: true, // required for cross-site cookies on HTTPS (ngrok)
-  sameSite: "None",
+httpOnly: true,
+  secure: false,
+  sameSite: "lax",
   });
   res.json({ message: 'Logout successful' });
 }
