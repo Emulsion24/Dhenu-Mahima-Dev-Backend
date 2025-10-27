@@ -47,8 +47,8 @@ const corsOptions = {
     const allowedOrigins = [
       "https://dhenu-mahima-dev.vercel.app",
       "http://localhost:3000",
-      "https://saccharic-noncollusively-loni.ngrok-free.dev",
-      "http://g4s408kkw4cg48ccskcwc8kg.72.60.221.4.sslip.io"
+      "http://i4o4s8gw4ockc44coogsgkgk.72.60.221.4.sslip.io",
+      "http://g4s408kkw4cg48ccskcwc8kg.72.60.221.4.sslip.io",
     ];
 
     // ✅ Allow requests with no origin (Postman, mobile app, etc.)
