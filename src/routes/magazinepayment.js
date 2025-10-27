@@ -11,7 +11,7 @@ router.post("/create-order", verifyToken, requireRole("user"), createSubscriptio
 
 
 
-router.get("/callback", checkSubscriptionOrderStatus);
+router.get("/callback/:merchantOrderId", checkSubscriptionOrderStatus);
 router.get("/", verifyToken, requireRole("admin"),getAllSubscriptions);
 
 export default router;

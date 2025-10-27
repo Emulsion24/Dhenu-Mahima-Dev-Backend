@@ -1,19 +1,34 @@
 import { prisma } from '../prisma/config.js';
 import cloudinary from '../utils/cloudinary.js';
+import redisClient from '../services/redis.js'; // ✅ Add Redis
 import fs from "fs/promises";
 
-// Get all Sansthans
+// ✅ GET ALL SANSTHANS (Cached)
 export const getAllSansthans = async (req, res) => {
   try {
+    const cacheKey = "all_sansthans";
+    const cached = await redisClient.get(cacheKey);
+
+    if (cached) {
+      console.log("Cache Hit: All Sansthans");
+      return res.status(200).json(JSON.parse(cached));
+    }
+
+    console.log("Cache Miss: All Sansthans");
     const sansthans = await prisma.dtaSanssthan.findMany({
       orderBy: { createdAt: 'desc' }
     });
-    
-    res.status(200).json({
-      success: true,        
+
+    const response = {
+      success: true,
       count: sansthans.length,
       data: sansthans
-    });
+    };
+
+    // Cache for 30 mins
+    await redisClient.setEx(cacheKey, 1800, JSON.stringify(response));
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching sansthans:', error);
     res.status(500).json({
@@ -24,26 +39,34 @@ export const getAllSansthans = async (req, res) => {
   }
 };
 
-// Get single Sansthan by ID
+// ✅ GET SINGLE SANSTHAN (Cached)
 export const getSansthanById = async (req, res) => {
   try {
-    const { id } = req.params.id;
-    
+    const { id } = req.params;
+    const cacheKey = `sansthan:${id}`;
+
+    const cached = await redisClient.get(cacheKey);
+    if (cached) {
+      console.log(`Cache Hit: Sansthan ${id}`);
+      return res.status(200).json(JSON.parse(cached));
+    }
+
+    console.log(`Cache Miss: Sansthan ${id}`);
     const sansthan = await prisma.dtaSanssthan.findUnique({
       where: { id: parseInt(id) }
     });
-    
+
     if (!sansthan) {
       return res.status(404).json({
         success: false,
         message: 'Sansthan not found'
       });
     }
-    
-    res.status(200).json({
-      success: true,
-      data: sansthan
-    });
+
+    const response = { success: true, data: sansthan };
+    await redisClient.setEx(cacheKey, 1800, JSON.stringify(response)); // Cache 30 mins
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching sansthan:', error);
     res.status(500).json({
@@ -54,8 +77,8 @@ export const getSansthanById = async (req, res) => {
   }
 };
 
-// Create new Sansthan
- export const createSansthan = async (req, res) => {
+// ✅ CREATE NEW SANSTHAN (Invalidate Cache)
+export const createSansthan = async (req, res) => {
   try {
     const {
       name,
@@ -72,7 +95,6 @@ export const getSansthanById = async (req, res) => {
       pincode
     } = req.body;
 
-    // Validate required fields
     if (!name || !email || !phone) {
       return res.status(400).json({
         success: false,
@@ -82,7 +104,6 @@ export const getSansthanById = async (req, res) => {
 
     let imageUrl = null;
 
-    // Upload image to Cloudinary if provided
     if (req.file) {
       const result = await cloudinary.uploader.upload(req.file.path, {
         folder: 'sansthans',
@@ -93,9 +114,9 @@ export const getSansthanById = async (req, res) => {
         ]
       });
       imageUrl = result.secure_url;
+      await fs.unlink(req.file.path);
     }
 
-    // Combine address fields
     const fullAddress = address && city && state && pincode 
       ? `${address}, ${city}, ${state} - ${pincode}`
       : null;
@@ -116,6 +137,9 @@ export const getSansthanById = async (req, res) => {
       }
     });
 
+    // 🧹 Invalidate cached list
+    await redisClient.del("all_sansthans");
+
     res.status(201).json({
       success: true,
       message: 'Sansthan created successfully',
@@ -131,7 +155,7 @@ export const getSansthanById = async (req, res) => {
   }
 };
 
-// Update Sansthan
+// ✅ UPDATE SANSTHAN (Invalidate Cache)
 export const updateSansthan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -150,7 +174,6 @@ export const updateSansthan = async (req, res) => {
       pincode
     } = req.body;
 
-    // Check if sansthan exists
     const existingSansthan = await prisma.dtaSanssthan.findUnique({
       where: { id: parseInt(id) }
     });
@@ -164,9 +187,7 @@ export const updateSansthan = async (req, res) => {
 
     let imageUrl = existingSansthan.image;
 
-    // Upload new image to Cloudinary if provided
     if (req.file) {
-      // Delete old image from Cloudinary if exists
       if (existingSansthan.image) {
         const publicId = existingSansthan.image.split('/').pop().split('.')[0];
         await cloudinary.uploader.destroy(`sansthans/${publicId}`);
@@ -181,9 +202,9 @@ export const updateSansthan = async (req, res) => {
         ]
       });
       imageUrl = result.secure_url;
+      await fs.unlink(req.file.path);
     }
 
-    // Combine address fields
     const fullAddress = address && city && state && pincode 
       ? `${address}, ${city}, ${state} - ${pincode}`
       : null;
@@ -205,6 +226,10 @@ export const updateSansthan = async (req, res) => {
       }
     });
 
+    // 🧹 Invalidate caches
+    await redisClient.del("all_sansthans");
+    await redisClient.del(`sansthan:${id}`);
+
     res.status(200).json({
       success: true,
       message: 'Sansthan updated successfully',
@@ -220,7 +245,7 @@ export const updateSansthan = async (req, res) => {
   }
 };
 
-// Delete Sansthan
+// ✅ DELETE SANSTHAN (Invalidate Cache)
 export const deleteSansthan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -236,7 +261,6 @@ export const deleteSansthan = async (req, res) => {
       });
     }
 
-    // Delete image from Cloudinary if exists
     if (sansthan.image) {
       const publicId = sansthan.image.split('/').pop().split('.')[0];
       await cloudinary.uploader.destroy(`sansthans/${publicId}`);
@@ -245,6 +269,10 @@ export const deleteSansthan = async (req, res) => {
     await prisma.dtaSanssthan.delete({
       where: { id: parseInt(id) }
     });
+
+    // 🧹 Invalidate caches
+    await redisClient.del("all_sansthans");
+    await redisClient.del(`sansthan:${id}`);
 
     res.status(200).json({
       success: true,

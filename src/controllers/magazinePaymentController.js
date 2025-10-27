@@ -25,13 +25,11 @@ let tokenExpiresAt = null;
  */
 const getAuthToken = async () => {
   try {
-    // Check if token is valid (refresh 5 minutes before expiry)
     const currentTime = Math.floor(Date.now() / 1000);
     if (authToken && tokenExpiresAt && currentTime < tokenExpiresAt - 300) {
       return authToken;
     }
 
-    // Request new token
     const tokenUrl = `${PHONEPE_BASE_URL}/v1/oauth/token`;
     const params = new URLSearchParams({
       client_id: PHONEPE_CLIENT_ID,
@@ -67,13 +65,13 @@ export const createSubscription = async (req, res) => {
       phone,
       address,
       city,
-      state,
+      state: userState,
       pincode,
       membershipType,
       amount,
-      frequency = "MONTHLY", // DAILY, WEEKLY, MONTHLY, QUARTERLY, HALF_YEARLY, YEARLY, ON_DEMAND
-      recurringCount, // Optional: number of times to recur
-      description,
+      frequency = "MONTHLY",
+      vpa,
+      paymentMode,
     } = req.body;
 
     const userId = req.user?.id;
@@ -87,95 +85,228 @@ export const createSubscription = async (req, res) => {
       return res.status(400).json({ message: "राशि शून्य से अधिक होनी चाहिए।" });
     }
 
-    // Get OAuth token
     const token = await getAuthToken();
+    if (!token) {
+      throw new Error("Failed to obtain OAuth token");
+    }
 
     // Generate unique IDs
-    const merchantSubscriptionId = `SUB_${randomUUID()}`;
-    const merchantUserId = userId ? `USER_${userId}` : `GUEST_${randomUUID()}`;
-    const merchantOrderId = `ORD_${randomUUID()}`;
-
-    // Convert to paise (smallest currency unit)
+    const timestamp = Date.now();
+    const merchantSubscriptionId = `SUB_${timestamp}_${randomUUID().substring(0, 8)}`;
+    const merchantOrderId = `ORD_${timestamp}_${randomUUID().substring(0, 8)}`;
     const amountInPaisa = Math.round(amount * 100);
 
-    // Calculate expiry (1 year from now)
-    const expireAt = Date.now() + (365 * 24 * 60 * 60 * 1000);
+    const expireAt = Date.now() + (30 * 60 * 1000);
+    const subscriptionExpireAt = Date.now() + (365 * 24 * 60 * 60 * 1000);
 
-    // Prepare PhonePe API payload
+    // Determine device and payment mode
+    const userAgent = req.headers['user-agent'] || '';
+    const isAndroid = /Android/i.test(userAgent);
+    const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
+    
+    let deviceOS = null;
+    let selectedPaymentMode = paymentMode || "UPI_COLLECT";
+    
+    if (isAndroid) {
+      deviceOS = "ANDROID";
+      selectedPaymentMode = "UPI_INTENT";
+    } else if (isIOS) {
+      deviceOS = "IOS";
+      selectedPaymentMode = "UPI_INTENT";
+    }
+
+    // Build payment mode object
+    let paymentModeObj;
+    
+    if (selectedPaymentMode === "UPI_COLLECT" && vpa) {
+      paymentModeObj = {
+        type: "UPI_COLLECT",
+        details: {
+          type: "VPA",
+          vpa: vpa,
+        },
+      };
+    } else if (selectedPaymentMode === "UPI_INTENT") {
+      const targetApp = isAndroid ? "com.phonepe.app" : "PHONEPE";
+      paymentModeObj = {
+        type: "UPI_INTENT",
+        targetApp: targetApp,
+      };
+    } else {
+      return res.status(400).json({
+        message: "कृपया अपना UPI ID दर्ज करें या PhonePe ऐप का उपयोग करें।",
+        requiresVPA: true,
+      });
+    }
+
     const payload = {
-      merchantId: PHONEPE_MERCHANT_ID,
-      merchantSubscriptionId,
-      merchantUserId,
       merchantOrderId,
-      subscriptionName: `${membershipType} Membership`,
-      authWorkflowType: "TRANSACTION", // TRANSACTION or MANDATE
-      amountType: "FIXED", // FIXED or VARIABLE
       amount: amountInPaisa,
-      frequency,
-      recurringCount: recurringCount || null,
-      description: description || `${membershipType} Membership Payment`,
-      mobileNumber: phone,
       expireAt,
-      billingCycle: {
-        interval: 1,
-        intervalType: frequency,
-      },
       metaInfo: {
-        name,
-        email,
-        address: address ? `${address}, ${city}, ${state} - ${pincode}` : undefined,
+        udf1: name,
+        udf2: email,
+        udf3: phone,
+        udf4: membershipType,
+        udf5: address ? `${address}, ${city}, ${userState} - ${pincode}` : "",
+      },
+      paymentFlow: {
+        type: "SUBSCRIPTION_SETUP",
+        merchantSubscriptionId,
+        authWorkflowType: "TRANSACTION",
+        amountType: "FIXED",
+        maxAmount: amountInPaisa,
+        frequency,
+        expireAt: subscriptionExpireAt,
+        paymentMode: paymentModeObj,
       },
     };
 
-    // Make API call to PhonePe
+    if (deviceOS) {
+      payload.deviceContext = {
+        deviceOS,
+      };
+    }
+
+    console.log("PhonePe Subscription Payload:", JSON.stringify(payload, null, 2));
+
     const setupUrl = `${PHONEPE_BASE_URL}/subscriptions/v2/setup`;
+    
     const response = await axios.post(setupUrl, payload, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `O-Bearer ${token}`,
         "Content-Type": "application/json",
+        "Accept": "application/json",
       },
+      validateStatus: (status) => status < 600,
     });
 
-    const { subscriptionId,  redirectInfo } = response.data.data;
+    console.log("PhonePe Response:", JSON.stringify(response.data, null, 2));
 
-    // Save to MembershipPayment table (reusing existing structure)
+    if (response.status !== 200 || !response.data.orderId) {
+      throw new Error(`PhonePe API Error: ${JSON.stringify(response.data)}`);
+    }
+
+    const { orderId, state, intentUrl } = response.data;
+
+    // Save to database with proper ID mapping
+    const metadataObj = {
+      frequency,
+      deviceOS: deviceOS || "WEB",
+      paymentMode: selectedPaymentMode,
+      amountInPaisa,
+    };
+
     await prisma.membershipPayment.create({
       data: {
-        userId: userId || 0, // Use 0 for guest users
+        id: randomUUID(), // Generate UUID for primary key
+        userId: userId || 0,
         name,
         email,
         phone,
         address: address || "",
         city: city || "",
-        state: state || "",
+        state: userState || "",
         pincode: pincode || "",
         membershipType,
-        amount: Math.round(amount), // Store as Int
+        amount: Math.round(amount),
         status: "pending",
-        transactionId: merchantSubscriptionId, // Store subscription ID here
+        transactionId: merchantSubscriptionId, // Our subscription ID
+        orderId: merchantOrderId, // Our order ID
+        phonePeOrderId: orderId, // PhonePe's order ID
         paymentMethod: "phonepe_autopay",
+        metadata: JSON.stringify(metadataObj),
       },
     });
 
-    console.log(`Subscription created: ${merchantSubscriptionId}`);
+    console.log(`Subscription created:`, {
+      dbId: randomUUID(),
+      merchantSubscriptionId,
+      merchantOrderId,
+      phonePeOrderId: orderId,
+    });
+
+    const responseData = {
+      orderId,
+      merchantSubscriptionId,
+      merchantOrderId,
+      orderState: state,
+      paymentMode: selectedPaymentMode,
+      frequency,
+      amount: amountInPaisa,
+      deviceOS: deviceOS || "WEB",
+    };
+
+    if (selectedPaymentMode === "UPI_INTENT" && intentUrl) {
+      responseData.intentUrl = intentUrl;
+      responseData.redirectRequired = true;
+    } else if (selectedPaymentMode === "UPI_COLLECT") {
+      responseData.pollRequired = true;
+      responseData.pollInterval = 3000;
+      responseData.message = "कृपया अपने UPI ऐप में भुगतान अनुरोध स्वीकार करें";
+    }
 
     return res.status(200).json({
       success: true,
-      message: "सदस्यता सफलतापूर्वक बनाई गई",
-      data: {
-        subscriptionId,
-        merchantSubscriptionId,
-        merchantOrderId,
-        redirectUrl: redirectInfo?.url || null,
-        state,
-        frequency,
-        amount: amountInPaisa,
-      },
+      message: "सदस्यता सेटअप शुरू किया गया",
+      data: responseData,
     });
   } catch (error) {
     console.error("Create Subscription Error:", error.response?.data || error.message);
+    
+    if (error.response) {
+      console.error("Response Status:", error.response.status);
+      console.error("Response Data:", JSON.stringify(error.response.data, null, 2));
+    }
+    
     return res.status(500).json({
       message: "सदस्यता बनाने में त्रुटि",
+      error: error.response?.data?.message || error.message,
+      errorCode: error.response?.data?.errorCode,
+      details: error.response?.data || null,
+    });
+  }
+};
+
+/**
+ * Validate UPI VPA (Required before UPI_COLLECT)
+ * POST /api/autopay/validate-vpa
+ */
+export const validateUpiVpa = async (req, res) => {
+  try {
+    const { vpa } = req.body;
+
+    if (!vpa) {
+      return res.status(400).json({ message: "VPA आवश्यक है" });
+    }
+
+    const token = await getAuthToken();
+
+    const payload = {
+      type: "VPA",
+      vpa,
+    };
+
+    const validateUrl = `${PHONEPE_BASE_URL}/v2/validate/upi`;
+
+    const response = await axios.post(validateUrl, payload, {
+      headers: {
+        Authorization: `O-Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const { valid, name } = response.data;
+
+    return res.status(200).json({
+      success: true,
+      valid,
+      name: name || null,
+    });
+  } catch (error) {
+    console.error("VPA Validation Error:", error.response?.data || error.message);
+    return res.status(500).json({
+      message: "VPA सत्यापन में त्रुटि",
       error: error.response?.data?.message || error.message,
     });
   }
@@ -184,6 +315,7 @@ export const createSubscription = async (req, res) => {
 /**
  * Check Subscription Order Status
  * GET /api/autopay/subscription/order/:merchantOrderId/status
+ * This checks the status of the SETUP order
  */
 export const checkSubscriptionOrderStatus = async (req, res) => {
   try {
@@ -193,96 +325,206 @@ export const checkSubscriptionOrderStatus = async (req, res) => {
       return res.status(400).json({ message: "Order ID आवश्यक है" });
     }
 
-    const token = await getAuthToken();
-    const statusUrl = `${PHONEPE_BASE_URL}/subscriptions/v2/order/${merchantOrderId}/status`;
+    console.log(`Checking order status for: ${merchantOrderId}`);
 
-    const response = await axios.get(statusUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+    // Find subscription by orderId (merchantOrderId)
+    const subscription = await prisma.membershipPayment.findFirst({
+      where: { orderId: merchantOrderId },
     });
 
-    const { state, subscriptionId, merchantSubscriptionId } = response.data.data;
-
-    // Update membership payment status if setup is completed
-    if (state === "COMPLETED" && merchantSubscriptionId) {
-      await prisma.membershipPayment.updateMany({
-        where: { transactionId: merchantSubscriptionId },
-        data: { status: "success" },
+    if (!subscription) {
+      console.error(`Subscription not found for orderId: ${merchantOrderId}`);
+      return res.status(404).json({ 
+        message: "सदस्यता रिकॉर्ड नहीं मिला",
+        error: "Subscription not found in database",
+        searchedOrderId: merchantOrderId,
       });
-      console.log(`Subscription setup completed: ${merchantSubscriptionId}`);
-    } else if (state === "FAILED" && merchantSubscriptionId) {
-      await prisma.membershipPayment.updateMany({
-        where: { transactionId: merchantSubscriptionId },
-        data: { status: "failed" },
-      });
-      console.log(`Subscription setup failed: ${merchantSubscriptionId}`);
     }
+
+    console.log(`Found subscription:`, {
+      id: subscription.id,
+      transactionId: subscription.transactionId,
+      orderId: subscription.orderId,
+      phonePeOrderId: subscription.phonePeOrderId,
+    });
+
+    const token = await getAuthToken();
+    const statusUrl = `${PHONEPE_BASE_URL}/subscriptions/v2/order/${merchantOrderId}/status?details=true`;
+   
+    const response = await axios.get(statusUrl, {
+      headers: {
+        Authorization: `O-Bearer ${token}`,
+        "Accept": "application/json",
+      },
+      validateStatus: (status) => status < 600,
+    });
+
+    console.log("PhonePe Order Status Response:", JSON.stringify(response.data, null, 2));
+
+    if (response.status !== 200) {
+      throw new Error(`PhonePe API Error: ${JSON.stringify(response.data)}`);
+    }
+
+    const { state, subscriptionId, merchantSubscriptionId } = response.data;
+
+    // Update database based on order state
+    const updateData = {
+      updatedAt: new Date(),
+    };
+    
+    if (state === "COMPLETED") {
+      updateData.status = "success";
+      if (subscriptionId && !subscription.phonePeSubscriptionId) {
+        updateData.phonePeSubscriptionId = subscriptionId;
+      }
+      console.log(`✅ Setup completed: ${merchantSubscriptionId || subscription.transactionId}`);
+    } else if (state === "FAILED") {
+      updateData.status = "failed";
+      console.log(`❌ Setup failed: ${merchantSubscriptionId || subscription.transactionId}`);
+    } else if (state === "PENDING") {
+      updateData.status = "pending";
+      console.log(`⏳ Setup pending: ${merchantSubscriptionId || subscription.transactionId}`);
+    }
+
+    // Update the record using the string ID
+    await prisma.membershipPayment.update({
+      where: { id: subscription.id },
+      data: updateData,
+    });
 
     return res.status(200).json({
       success: true,
-      data: response.data.data,
+      data: {
+        ...response.data,
+        localSubscriptionId: subscription.id,
+        merchantSubscriptionId: subscription.transactionId,
+        dbStatus: updateData.status || subscription.status,
+      },
     });
   } catch (error) {
     console.error("Check Order Status Error:", error.response?.data || error.message);
+    
+    if (error.response) {
+      console.error("Response Status:", error.response.status);
+      console.error("Response Headers:", error.response.headers);
+    }
+    
     return res.status(500).json({
       message: "स्थिति जांचने में त्रुटि",
       error: error.response?.data?.message || error.message,
+      errorCode: error.response?.data?.errorCode,
     });
   }
 };
 
 /**
- * Get Subscription Status
+ * Get Subscription Status (checks the subscription mandate status)
  * GET /api/autopay/subscription/:merchantSubscriptionId/status
  */
 export const getSubscriptionStatus = async (req, res) => {
   try {
     const { merchantSubscriptionId } = req.params;
+    
+    console.log(`Getting subscription status for: ${merchantSubscriptionId}`);
 
     if (!merchantSubscriptionId) {
       return res.status(400).json({ message: "Subscription ID आवश्यक है" });
     }
+
+    // Find by transactionId (merchantSubscriptionId)
+    const subscription = await prisma.membershipPayment.findFirst({
+      where: { transactionId: merchantSubscriptionId },
+    });
+
+    if (!subscription) {
+      console.error(`Subscription not found for transactionId: ${merchantSubscriptionId}`);
+      return res.status(404).json({ 
+        message: "सदस्यता नहीं मिली",
+        error: "Subscription not found in database",
+        searchedSubscriptionId: merchantSubscriptionId,
+      });
+    }
+
+    console.log(`Found subscription:`, {
+      id: subscription.id,
+      transactionId: subscription.transactionId,
+      status: subscription.status,
+    });
 
     const token = await getAuthToken();
     const statusUrl = `${PHONEPE_BASE_URL}/subscriptions/v2/${merchantSubscriptionId}/status`;
 
     const response = await axios.get(statusUrl, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `O-Bearer ${token}`,
+        "Accept": "application/json",
       },
+      validateStatus: (status) => status < 600,
     });
 
-    const { state } = response.data.data;
+    console.log("Subscription Status Response:", JSON.stringify(response.data, null, 2));
 
-    // Update status based on PhonePe response
+    if (response.status !== 200) {
+      throw new Error(`PhonePe API Error: ${JSON.stringify(response.data)}`);
+    }
+
+    const { state, subscriptionId } = response.data;
+
+    // Map PhonePe states to database states
     let dbStatus = "pending";
-    if (state === "ACTIVE") dbStatus = "success";
-    else if (state === "CANCELLED" || state === "FAILED") dbStatus = "failed";
-    else if (state === "PAUSED") dbStatus = "paused";
+    if (state === "ACTIVE") {
+      dbStatus = "success";
+    } else if (state === "CANCELLED" || state === "FAILED" || state === "EXPIRED") {
+      dbStatus = "failed";
+    } else if (state === "PAUSED") {
+      dbStatus = "paused";
+    } else if (state === "INACTIVE") {
+      dbStatus = "inactive";
+    }
 
-    await prisma.membershipPayment.updateMany({
-      where: { transactionId: merchantSubscriptionId },
-      data: { status: dbStatus },
+    console.log(`Subscription state: ${state} → DB status: ${dbStatus}`);
+
+    // Update database
+    const updateData = { 
+      status: dbStatus,
+      updatedAt: new Date(),
+    };
+    
+    if (subscriptionId && !subscription.phonePeSubscriptionId) {
+      updateData.phonePeSubscriptionId = subscriptionId;
+    }
+
+    await prisma.membershipPayment.update({
+      where: { id: subscription.id },
+      data: updateData,
     });
 
     return res.status(200).json({
       success: true,
-      data: response.data.data,
+      data: {
+        ...response.data,
+        localSubscriptionId: subscription.id,
+        dbStatus,
+      },
     });
   } catch (error) {
     console.error("Get Subscription Status Error:", error.response?.data || error.message);
+    
+    if (error.response) {
+      console.error("Response Status:", error.response.status);
+    }
+    
     return res.status(500).json({
       message: "सदस्यता स्थिति प्राप्त करने में त्रुटि",
       error: error.response?.data?.message || error.message,
+      errorCode: error.response?.data?.errorCode,
     });
   }
 };
 
 /**
- * Notify Customer before Redemption (Pre-debit notification)
+ * Notify Customer before Redemption
  * POST /api/autopay/subscription/notify
- * Admin Only
  */
 export const notifyRedemption = async (req, res) => {
   try {
@@ -299,14 +541,14 @@ export const notifyRedemption = async (req, res) => {
       merchantId: PHONEPE_MERCHANT_ID,
       merchantSubscriptionId,
       amount: amountInPaisa,
-      dueDate: dueDate || Date.now() + (24 * 60 * 60 * 1000), // Default: tomorrow
+      dueDate: dueDate || Date.now() + (24 * 60 * 60 * 1000),
       description: description || "आगामी भुगतान अधिसूचना",
     };
 
     const notifyUrl = `${PHONEPE_BASE_URL}/subscriptions/v2/notify`;
     const response = await axios.post(notifyUrl, payload, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `O-Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
@@ -330,7 +572,6 @@ export const notifyRedemption = async (req, res) => {
 /**
  * Execute Redemption (Charge customer)
  * POST /api/autopay/subscription/redeem
- * Admin Only
  */
 export const executeRedemption = async (req, res) => {
   try {
@@ -341,7 +582,7 @@ export const executeRedemption = async (req, res) => {
     }
 
     const token = await getAuthToken();
-    const merchantOrderId = `ORD_${randomUUID()}`;
+    const merchantOrderId = `REDEEM_${Date.now()}_${randomUUID().substring(0, 8)}`;
     const amountInPaisa = Math.round(amount * 100);
 
     const payload = {
@@ -355,28 +596,38 @@ export const executeRedemption = async (req, res) => {
     const redeemUrl = `${PHONEPE_BASE_URL}/subscriptions/v2/redeem`;
     const response = await axios.post(redeemUrl, payload, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `O-Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
 
-    const { orderId, state } = response.data.data;
+    const { orderId, state } = response.data;
 
-    // Log this as a separate payment in Payment table
+    // Find subscription
     const subscription = await prisma.membershipPayment.findFirst({
       where: { transactionId: merchantSubscriptionId },
     });
 
     if (subscription) {
+      // Create payment record
+      const paymentMetadata = {
+        phonePeOrderId: orderId,
+        merchantSubscriptionId,
+        merchantOrderId,
+      };
+
       await prisma.payment.create({
         data: {
+          id: randomUUID(),
           userId: subscription.userId,
           referenceId: merchantOrderId,
           provider: "phonepe_autopay",
           amount: amount,
           status: state === "COMPLETED" ? "success" : "pending",
+          metadata: JSON.stringify(paymentMetadata),
         },
       });
+      
       console.log(`Redemption initiated: ${merchantOrderId} for ${merchantSubscriptionId}`);
     }
 
@@ -420,15 +671,18 @@ export const cancelSubscription = async (req, res) => {
     const cancelUrl = `${PHONEPE_BASE_URL}/subscriptions/v2/${merchantSubscriptionId}/cancel`;
     const response = await axios.post(cancelUrl, payload, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `O-Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
 
-    // Update subscription status in database
+    // Update subscription status
     await prisma.membershipPayment.updateMany({
       where: { transactionId: merchantSubscriptionId },
-      data: { status: "cancelled" },
+      data: { 
+        status: "cancelled",
+        updatedAt: new Date(),
+      },
     });
 
     console.log(`Subscription cancelled: ${merchantSubscriptionId}`);
@@ -446,207 +700,6 @@ export const cancelSubscription = async (req, res) => {
     });
   }
 };
-
-/**
- * Subscription Webhook Handler
- * POST /api/autopay/webhook
- */
-export const subscriptionWebhook = async (req, res) => {
-  try {
-    const authHeader = req.headers["authorization"] || req.headers["Authorization"];
-    
-    if (!authHeader) {
-      console.error("Webhook: Missing Authorization header");
-      return res.status(400).json({ message: "Missing Authorization header" });
-    }
-
-    // Validate webhook authorization (Basic Auth)
-    const webhookUsername = process.env.PHONEPE_WEBHOOK_USERNAME;
-    const webhookPassword = process.env.PHONEPE_WEBHOOK_PASSWORD;
-    const expectedAuth = `Basic ${Buffer.from(`${webhookUsername}:${webhookPassword}`).toString('base64')}`;
-
-    if (authHeader !== expectedAuth) {
-      console.error("Webhook: Invalid authorization");
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const payload = req.body;
-    console.log("Subscription Webhook Received:", JSON.stringify(payload, null, 2));
-
-    const { event, payload: eventPayload } = payload;
-
-    // Handle different webhook events
-    switch (event) {
-      case "subscription.setup.order.completed":
-        await handleSetupCompleted(eventPayload);
-        break;
-
-      case "subscription.setup.order.failed":
-        await handleSetupFailed(eventPayload);
-        break;
-
-      case "subscription.redemption.order.completed":
-        await handleRedemptionCompleted(eventPayload);
-        break;
-
-      case "subscription.redemption.order.failed":
-        await handleRedemptionFailed(eventPayload);
-        break;
-
-      case "SUBSCRIPTION_PAUSED":
-        await handleSubscriptionPaused(eventPayload);
-        break;
-
-      case "SUBSCRIPTION_UNPAUSED":
-        await handleSubscriptionUnpaused(eventPayload);
-        break;
-
-      case "SUBSCRIPTION_CANCELLED":
-        await handleSubscriptionCancelled(eventPayload);
-        break;
-
-      default:
-        console.log("Unhandled webhook event:", event);
-    }
-
-    return res.status(200).send("OK");
-  } catch (error) {
-    console.error("Webhook Error:", error.message);
-    return res.status(500).send("Webhook processing failed");
-  }
-};
-
-// ==================== Webhook Event Handlers ====================
-
-const handleSetupCompleted = async (payload) => {
-  try {
-    const { merchantSubscriptionId } = payload;
-
-    await prisma.membershipPayment.updateMany({
-      where: { transactionId: merchantSubscriptionId },
-      data: { status: "success" },
-    });
-
-    console.log(`✅ Subscription setup completed: ${merchantSubscriptionId}`);
-  } catch (error) {
-    console.error("Error handling setup completed:", error.message);
-  }
-};
-
-const handleSetupFailed = async (payload) => {
-  try {
-    const { merchantSubscriptionId } = payload;
-
-    await prisma.membershipPayment.updateMany({
-      where: { transactionId: merchantSubscriptionId },
-      data: { status: "failed" },
-    });
-
-    console.log(`❌ Subscription setup failed: ${merchantSubscriptionId}`);
-  } catch (error) {
-    console.error("Error handling setup failed:", error.message);
-  }
-};
-
-const handleRedemptionCompleted = async (payload) => {
-  try {
-    const { merchantOrderId, merchantSubscriptionId, amount } = payload;
-
-    // Find subscription
-    const subscription = await prisma.membershipPayment.findFirst({
-      where: { transactionId: merchantSubscriptionId },
-    });
-
-    if (subscription) {
-      // Log successful payment
-      await prisma.payment.create({
-        data: {
-          userId: subscription.userId,
-          referenceId: merchantOrderId,
-          provider: "phonepe_autopay",
-          amount: amount ? amount / 100 : subscription.amount,
-          status: "success",
-        },
-      });
-      console.log(`✅ Redemption completed: ${merchantOrderId}`);
-    }
-  } catch (error) {
-    console.error("Error handling redemption completed:", error.message);
-  }
-};
-
-const handleRedemptionFailed = async (payload) => {
-  try {
-    const { merchantOrderId, merchantSubscriptionId } = payload;
-
-    const subscription = await prisma.membershipPayment.findFirst({
-      where: { transactionId: merchantSubscriptionId },
-    });
-
-    if (subscription) {
-      await prisma.payment.create({
-        data: {
-          userId: subscription.userId,
-          referenceId: merchantOrderId,
-          provider: "phonepe_autopay",
-          amount: subscription.amount,
-          status: "failed",
-        },
-      });
-      console.log(`❌ Redemption failed: ${merchantOrderId}`);
-    }
-  } catch (error) {
-    console.error("Error handling redemption failed:", error.message);
-  }
-};
-
-const handleSubscriptionPaused = async (payload) => {
-  try {
-    const { merchantSubscriptionId } = payload;
-
-    await prisma.membershipPayment.updateMany({
-      where: { transactionId: merchantSubscriptionId },
-      data: { status: "paused" },
-    });
-
-    console.log(`⏸️ Subscription paused: ${merchantSubscriptionId}`);
-  } catch (error) {
-    console.error("Error handling subscription paused:", error.message);
-  }
-};
-
-const handleSubscriptionUnpaused = async (payload) => {
-  try {
-    const { merchantSubscriptionId } = payload;
-
-    await prisma.membershipPayment.updateMany({
-      where: { transactionId: merchantSubscriptionId },
-      data: { status: "success" },
-    });
-
-    console.log(`▶️ Subscription unpaused: ${merchantSubscriptionId}`);
-  } catch (error) {
-    console.error("Error handling subscription unpaused:", error.message);
-  }
-};
-
-const handleSubscriptionCancelled = async (payload) => {
-  try {
-    const { merchantSubscriptionId } = payload;
-
-    await prisma.membershipPayment.updateMany({
-      where: { transactionId: merchantSubscriptionId },
-      data: { status: "cancelled" },
-    });
-
-    console.log(`🚫 Subscription cancelled: ${merchantSubscriptionId}`);
-  } catch (error) {
-    console.error("Error handling subscription cancelled:", error.message);
-  }
-};
-
-// ==================== Admin & User Query Functions ====================
-
 /**
  * Get All Subscriptions (Admin)
  * GET /api/autopay/admin/subscriptions
@@ -660,7 +713,7 @@ export const getAllSubscriptions = async (req, res) => {
     const skip = (pageNum - 1) * pageSize;
 
     const filters = {
-      paymentMethod: "phonepe_autopay", // Filter only autopay subscriptions
+      paymentMethod: "phonepe_autopay",
     };
 
     if (status) {
@@ -669,11 +722,12 @@ export const getAllSubscriptions = async (req, res) => {
 
     if (search) {
       filters.OR = [
-        { name: { contains: search } },
-        { email: { contains: search } },
+        { name: { contains: search, } },
+        { email: { contains: search, } },
         { phone: { contains: search } },
-        { membershipType: { contains: search } },
+        { membershipType: { contains: search,} },
         { transactionId: { contains: search } },
+        { orderId: { contains: search } },
       ];
     }
 
@@ -722,7 +776,6 @@ export const getUserSubscriptions = async (req, res) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // Get payment history for each subscription
     const subscriptionsWithPayments = await Promise.all(
       subscriptions.map(async (sub) => {
         const payments = await prisma.payment.findMany({
@@ -762,19 +815,17 @@ export const getSubscriptionById = async (req, res) => {
     const userRole = req.user?.role;
 
     const subscription = await prisma.membershipPayment.findUnique({
-      where: { id },
+      where: { id: parseInt(id) },
     });
 
     if (!subscription) {
       return res.status(404).json({ message: "सदस्यता नहीं मिली" });
     }
 
-    // Check if user owns this subscription (unless admin)
     if (userRole !== "admin" && subscription.userId !== userId) {
       return res.status(403).json({ message: "अनधिकृत पहुंच" });
     }
 
-    // Get payment history
     const payments = await prisma.payment.findMany({
       where: {
         userId: subscription.userId,
@@ -795,4 +846,3 @@ export const getSubscriptionById = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
-

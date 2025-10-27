@@ -167,18 +167,6 @@ model BookPurchase {
 // PAYMENT LOGS
 //////////////////////////////
 
-model Payment {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  referenceId String
-  provider    String
-  amount      Float
-  status      String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id])
-}
 
 //////////////////////////////
 // NEWS
@@ -552,21 +540,52 @@ model Gaumatabhajan {
 
 
 model MembershipPayment {
-  id              String   @id @default(cuid())
-  userId           Int
-  name            String
-  email           String
-  phone           String
-  address         String
-  city            String
-  state           String
-  pincode         String
-  membershipType  String
-  amount          Int
-  status          String   @default("pending")
-  transactionId   String   @unique
-  paymentMethod   String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                     String   @id @default(uuid()) @db.VarChar(191)
+  userId                 Int
+  name                   String   @db.VarChar(191)
+  email                  String   @db.VarChar(191)
+  phone                  String   @db.VarChar(191)
+  address                String   @db.VarChar(191)
+  city                   String   @db.VarChar(191)
+  state                  String   @db.VarChar(191)
+  pincode                String   @db.VarChar(191)
+  membershipType         String   @db.VarChar(191)
+  amount                 Int
+  status                 String   @default("pending") @db.VarChar(191)
+  transactionId          String   @db.VarChar(191)
+  orderId                String?  @db.VarChar(191)
+  phonePeOrderId         String?  @db.VarChar(191)
+  phonePeSubscriptionId  String?  @db.VarChar(191)
+  paymentMethod          String   @db.VarChar(191)
+  metadata               String?  @db.Text
+  createdAt              DateTime @default(now()) @db.DateTime(3)
+  updatedAt              DateTime @updatedAt @db.DateTime(3)
+
+  @@index([orderId])
+  @@index([phonePeOrderId])
+  @@index([phonePeSubscriptionId])
+  @@index([transactionId])
+  @@index([userId, status])
+  @@map("membershipPayment")
+}
+
+// If you have a Payment model, ensure it has these fields:
+model Payment {
+  id          String   @id @default(uuid()) @db.VarChar(191)
+  userId      Int
+  referenceId String   @db.VarChar(191)
+  provider    String   @db.VarChar(191)
+  amount      Float
+  status      String   @db.VarChar(191)
+  metadata    String?  @db.Text
+  createdAt   DateTime @default(now()) @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @db.DateTime(3)
+
+  @@index([userId])
+  @@index([referenceId])
+  @@index([provider])
+  @@map("payment")
+
+  user User @relation(fields: [userId], references: [id])
 }
 

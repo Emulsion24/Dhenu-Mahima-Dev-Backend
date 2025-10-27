@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import fssync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import mime from "mime"; 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -199,43 +200,49 @@ export const deleteBhajan = async (req, res) => {
   }
 };
 
-// 🟢 Stream bhajan audio
+
+
 export const streamAudio = async (req, res) => {
   try {
     const { filename } = req.params;
-    const audioPath = path.join(__dirname, '../uploads/audio', filename);
+    const audioPath = path.join(__dirname, "../uploads/audio", filename);
 
     const stat = await fs.stat(audioPath);
     const fileSize = stat.size;
     const range = req.headers.range;
 
+    // 👇 Detect correct MIME type (e.g. audio/wav, audio/mpeg, etc.)
+    const contentType = mime.getType(audioPath) || "application/octet-stream";
+
     if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
+      const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
       const chunksize = end - start + 1;
       const file = fssync.createReadStream(audioPath, { start, end });
+
       const head = {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': 'audio/mpeg',
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunksize,
+        "Content-Type": contentType, // 👈 use detected type
       };
       res.writeHead(206, head);
       file.pipe(res);
     } else {
       const head = {
-        'Content-Length': fileSize,
-        'Content-Type': 'audio/mpeg',
+        "Content-Length": fileSize,
+        "Content-Type": contentType, // 👈 use detected type
       };
       res.writeHead(200, head);
       fssync.createReadStream(audioPath).pipe(res);
     }
   } catch (err) {
-    console.error('Error streaming audio:', err);
-    res.status(404).json({ message: 'Audio not found' });
+    console.error("Error streaming audio:", err);
+    res.status(404).json({ message: "Audio not found" });
   }
 };
+
 
 // 🟢 Admin-only download
 export const downloadAudio = async (req, res) => {

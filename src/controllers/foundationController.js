@@ -31,8 +31,8 @@ export const getAllFoundations = async (req, res) => {
 
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search,  } },
+        { description: { contains: search,  } },
       ];
     }
 
@@ -227,7 +227,7 @@ export const createFoundation = async (req, res) => {
     clearCachePattern('foundations:*').catch(err => 
       console.error('Cache clear error:', err)
     );
-
+    clearCachePattern('foundation_data');
     res.status(201).json(foundation);
   } catch (error) {
     // Clean up uploaded file if it exists

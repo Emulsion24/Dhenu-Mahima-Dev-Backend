@@ -172,41 +172,52 @@ export const deleteBhajan = async (req, res) => {
 };
 
 // 🟢 Stream bhajan audio
+
 export const streamAudio = async (req, res) => {
   try {
     const { filename } = req.params;
-
-    const audioPath = path.join(__dirname, '../uploads/audio', filename);
+    const audioPath = path.join(__dirname, "../uploads/audio", filename);
 
     const stat = await fs.stat(audioPath);
     const fileSize = stat.size;
     const range = req.headers.range;
 
+    // ✅ Add CORS & content headers (for cross-origin streaming)
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "public, max-age=86400"); // optional
+
     if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
+      const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
       const chunksize = end - start + 1;
       const file = fssync.createReadStream(audioPath, { start, end });
+
       const head = {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': 'audio/mpeg',
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunksize,
+        "Content-Type": "audio/mpeg",
       };
+
       res.writeHead(206, head);
       file.pipe(res);
     } else {
       const head = {
-        'Content-Length': fileSize,
-        'Content-Type': 'audio/mpeg',
+        "Content-Length": fileSize,
+        "Content-Type": "audio/mpeg",
       };
+
       res.writeHead(200, head);
       fssync.createReadStream(audioPath).pipe(res);
     }
   } catch (err) {
-    console.error('Error streaming audio:', err);
-    res.status(404).json({ message: 'Audio not found' });
+    console.error("❌ Error streaming audio:", err);
+    res.status(404).json({ message: "Audio not found" });
   }
 };
 
