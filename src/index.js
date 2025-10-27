@@ -45,10 +45,10 @@ const __dirname = path.dirname(__filename);
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
-      "https://dhenu-mahima-dev.vercel.app",
+
       "http://localhost:3000",
-      "http://i4o4s8gw4ockc44coogsgkgk.72.60.221.4.sslip.io",
-      "http://g4s408kkw4cg48ccskcwc8kg.72.60.221.4.sslip.io",
+      "https://app.dhenumahima.com"
+      
     ];
 
     // ✅ Allow requests with no origin (Postman, mobile app, etc.)
@@ -221,7 +221,7 @@ app.use(errorHandler);
 // ========================================
 // ✅ START SERVER
 // ========================================
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`
@@ -235,10 +235,9 @@ app.listen(PORT, () => {
   `);
   
   console.log("✅ Allowed CORS Origins:");
-  console.log("   - https://dhenu-mahima-dev.vercel.app");
+
   console.log("   - http://localhost:3000");
-  console.log("   - https://saccharic-noncollusively-loni.ngrok-free.dev");
-  console.log("");
+  console.log("   - https://app.dhenumahima.com");
 });
 
 // ========================================
