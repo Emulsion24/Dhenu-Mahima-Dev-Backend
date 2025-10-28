@@ -34,7 +34,7 @@ import userdataRoutes from "./routes/userData.js";
 import pdfPaymentRoutes from "./routes/pdfPayment.js";
 
 dotenv.config();
-
+const FRONTEND_URL=process.env.FRONTEND_URL;
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,8 +46,8 @@ const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
 
-      "http://localhost:3000",
-      "https://app.dhenumahima.com"
+      `${FRONTEND_URL}`,
+    
       
     ];
 
@@ -236,8 +236,8 @@ app.listen(PORT, () => {
   
   console.log("✅ Allowed CORS Origins:");
 
-  console.log("   - http://localhost:3000");
-  console.log("   - https://app.dhenumahima.com");
+  console.log(FRONTEND_URL);
+  
 });
 
 // ========================================

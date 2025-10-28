@@ -1,11 +1,14 @@
 import { prisma } from '../prisma/config.js';
 import bcrypt from 'bcrypt';
+import dotenv from "dotenv";
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import {generateOtp} from "../utils/generateOtp.js"
 import { sendOtpEmail, sendResetPasswordEmail } from '../services/emailService.js';
+dotenv.config();
 
 const SALT_ROUNDS = 10;
+const isProduction = process.env.NODE_ENV === "production";
 
 // 📝 SIGNUP
 export async function signup(req, res) {
@@ -74,11 +77,11 @@ export async function login(req, res) {
     );
 
     // Set token in HttpOnly cookie
-res.cookie('token', token, {
-httpOnly: true,
-  secure: false,
-  sameSite: "lax",
-  maxAge: 7 * 24 * 60 * 60 * 1000,
+res.cookie("token", token, {
+  httpOnly: true,
+  secure: isProduction,        // ✅ HTTPS only in production
+  sameSite: isProduction ? "strict" : "lax",  // ✅ Prevent CSRF in prod
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 });
 
 
@@ -92,11 +95,12 @@ httpOnly: true,
 
 // 🚪 LOGOUT
 export async function logout(req, res) {
-  res.clearCookie('token', {
-httpOnly: true,
-  secure: false,
-  sameSite: "lax",
-  });
+ res.clearCookie("token", {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "strict" : "lax",
+});
+
   res.json({ message: 'Logout successful' });
 }
 
