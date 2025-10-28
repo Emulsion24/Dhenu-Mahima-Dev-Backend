@@ -3,6 +3,7 @@ import crypto, { randomUUID } from "crypto";
 import { prisma } from "../prisma/config.js";
 import { MetaInfo, StandardCheckoutPayRequest } from "pg-sdk-node";
 import phonePe from "../utils/phonepeClient.js"; // PhonePe SDK instance
+import { sendDonationThankYouEmail } from "../services/emailService.js";
 
 dotenv.config();
 const getDonationFilters = (query) => {
@@ -262,11 +263,18 @@ export const donationCallback = async (req, res) => {
     }
 
     // Update donation in DB
-    await prisma.donation.update({
+    const updatedDonation=await prisma.donation.update({
       where: { transactionId: merchantTransactionId },
       data: { status },
 
     });
+    if (status === "success" && updatedDonation.email) {
+          await sendDonationThankYouEmail({
+          name: updatedDonation.name,
+          email: updatedDonation.email,
+          amount: updatedDonation.amount,
+          transactionId: updatedDonation.transactionId,
+      });}
 
     // Redirect user to frontend with status
     return res.redirect(

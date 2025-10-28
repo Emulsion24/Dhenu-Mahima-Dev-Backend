@@ -11,7 +11,7 @@ const PHONEPE_BASE_URL = process.env.NODE_ENV === "production"
   ? "https://api.phonepe.com/apis/pg"
   : "https://api-preprod.phonepe.com/apis/pg-sandbox";
 
-const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
+
 const PHONEPE_CLIENT_ID = process.env.PHONEPE_CLIENT_ID;
 const PHONEPE_CLIENT_SECRET = process.env.PHONEPE_CLIENT_SECRET;
 const PHONEPE_CLIENT_VERSION = process.env.PHONEPE_CLIENT_VERSION || "1";

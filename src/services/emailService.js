@@ -34,3 +34,38 @@ export async function sendResetPasswordEmail(to, link) {
     html: `<p>Click below to reset password:</p><a href="${link}">${link}</a>`,
   });
 }
+export const sendDonationThankYouEmail = async ({ name, email, amount, transactionId }) => {
+  if (!email) return; // skip if no email provided
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: email,
+    subject: `🙏 Thank You for Your Donation to Dhenu Mahima`,
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #333;">
+        <h2>🌸 Thank You, ${name || "Devotee"}!</h2>
+        <p>We have received your generous donation of <strong>₹${amount}</strong>.</p>
+        <p>Your contribution helps us continue our service towards <strong>Gau Seva</strong> and spiritual welfare.</p>
+        <p><strong>Transaction ID:</strong> ${transactionId}</p>
+        <p>We will contact you soon if any details are needed.</p>
+
+        <br/>
+        <p>With Gratitude,</p>
+        <p><strong>Dhenu Mahima Team</strong></p>
+      </div>
+    `,
+    text: `
+Thank you, ${name || "Devotee"}!
+
+We have received your generous donation of ₹${amount}.
+Transaction ID: ${transactionId}
+
+Your contribution helps us continue our service towards Gau Seva.
+
+With gratitude,
+Dhenu Mahima Team
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
