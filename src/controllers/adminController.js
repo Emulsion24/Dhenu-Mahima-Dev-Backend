@@ -98,7 +98,7 @@ export async function addDirectorMessage(req, res) {
     });
 
     // Clear Redis cache
-    await redisClient.del("directorMessage");
+  
     await redisClient.del("director_message");
 
     res.status(201).json({
@@ -126,7 +126,7 @@ export async function deleteDirectorMessage(req, res) {
 
     // Clear Redis cache (or update with latest message)
     
-    await redisClient.del("directorMessage");
+
        await redisClient.del("director_message");
 
     res.json({ message: "Message deleted successfully", data: deletedMessage });
@@ -138,7 +138,7 @@ export async function deleteDirectorMessage(req, res) {
 
 export async function getDirectorMessage(req, res) {
   try {
-    const cacheKey = "directorMessage";
+    const cacheKey = "director_message";
 
     // 1️⃣ Check Redis cache first
     const cachedData = await redisClient.get(cacheKey);
