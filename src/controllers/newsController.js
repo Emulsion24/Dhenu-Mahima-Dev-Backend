@@ -2,8 +2,10 @@ import {prisma} from '../prisma/config.js';
 import { validationResult } from 'express-validator';
 import { generateUniqueSlug } from '../utils/slugify.js';
 import fs from 'fs';
+import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+dotenv.config()
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -156,7 +158,8 @@ export const createNews = async (req, res, next) => {
     // Handle image upload
    const BASE_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 let imagePath = req.file ? `${BASE_URL}/uploads/news/${req.file.filename}` : `${BASE_URL}/images/1.png`;
-
+console.log(BASE_URL)
+console.log(imagePath)
     // Parse content and tags if they're strings
     const parsedContent = typeof content === 'string' ? JSON.parse(content) : content;
     const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;

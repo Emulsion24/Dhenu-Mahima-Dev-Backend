@@ -21,7 +21,7 @@ export const createGopal = async (req, res) => {
       await fs.unlink(req.file.path);
       uploadedFile = null;
   
-    const { heroTitle, responsibilities, heroSubtitle,personalInfo, lifeJourney,pledges,spiritualEducation} = req.body;
+    const { heroTitle,   socialLinks ,responsibilities, heroSubtitle,personalInfo, lifeJourney,pledges,spiritualEducation} = req.body;
 
 
 
@@ -36,7 +36,8 @@ const newGopal= await prisma.gopalPariwar.create({
     spiritualEducation: JSON.stringify(spiritualEducation), // <-- stringify
     lifeJourney,
     responsibilities,
-    pledges
+    pledges,
+    socialLinks:JSON.stringify(socialLinks),
   }
 });
 
@@ -78,12 +79,12 @@ if (isNaN(idInt)) {
 // Update GopalPariwar
 export const updateGopal = async (req, res) => {
    const id = parseInt(req.params.id);
-  const { heroImage, heroTitle, heroSubtitle, personalInfo, spiritualEducation, lifeJourney, responsibilities, pledges } = req.body;
+  const { heroImage, socialLinks, heroTitle, heroSubtitle, personalInfo, spiritualEducation, lifeJourney, responsibilities, pledges } = req.body;
 
   try {
     const updatedGopal = await prisma.gopalPariwar.update({
       where: { id: parseInt(id) },
-      data: { heroImage, heroTitle, heroSubtitle, personalInfo, spiritualEducation, lifeJourney, responsibilities, pledges },
+      data: { heroImage, heroTitle, heroSubtitle, personalInfo, spiritualEducation, lifeJourney, responsibilities, pledges, socialLinks },
     });
     res.status(200).json(updatedGopal);
   } catch (err) {

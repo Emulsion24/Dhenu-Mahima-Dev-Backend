@@ -89,19 +89,28 @@ export async function addDirectorMessage(req, res) {
       return res.status(400).json({ message: "Message info is required" });
     }
 
+    // Delete all previous messages
+    await prisma.message.deleteMany();
+
+    // Add new message
     const newMessage = await prisma.message.create({
-      data: {info},
+      data: { info },
     });
 
-    // Update Redis cache
+    // Clear Redis cache
     await redisClient.del("directorMessage");
- 
-    res.status(201).json({ message: "Message added successfully", data: newMessage });
+    await redisClient.del("director_message");
+
+    res.status(201).json({
+      message: "New message added successfully (previous messages deleted)",
+      data: newMessage,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Error adding director message:", err);
     res.status(500).json({ message: "Server error" });
   }
-};
+}
+
 
 export async function deleteDirectorMessage(req, res) {
   try {
@@ -118,6 +127,7 @@ export async function deleteDirectorMessage(req, res) {
     // Clear Redis cache (or update with latest message)
     
     await redisClient.del("directorMessage");
+       await redisClient.del("director_message");
 
     res.json({ message: "Message deleted successfully", data: deletedMessage });
   } catch (err) {
