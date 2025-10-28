@@ -8,6 +8,7 @@ import {
   streamAudio,
   downloadAudio,
   searchBhajans,
+  getLatestBhajans,
 } from '../controllers/jevansutraController.js';
 
 import {upload} from '../middleware/upload.js';
@@ -18,6 +19,7 @@ const router = express.Router();
 router.get("/search",searchBhajans);
 // 📌 CRUD Routes
 router.get('/', getAllBhajans);
+router.get('/latest',getLatestBhajans);
 router.get('/:id', getBhajanById);
 router.post('/',verifyToken,requireRole("admin"),upload.fields([
     { name: 'audio', maxCount: 1 },

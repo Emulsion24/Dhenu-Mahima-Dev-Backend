@@ -59,60 +59,33 @@ const getDonationFilters = (query) => {
 
 export const getAllDonations = async (req, res) => {
   try {
-    // 1️⃣ Fetch 10 most recent donations first
-    let recentDonations = await prisma.donation.findMany({
+    // Get pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Build filter conditions
+    const where = getDonationFilters(req.query);
+
+    // Get total count for pagination
+    const total = await prisma.donation.count({ where });
+
+    // Fetch paginated donations
+    const donations = await prisma.donation.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
- 
+      skip,
+      take: limit,
       include: {
         user: { select: { name: true } },
       },
     });
 
-    // 2️⃣ Apply filters on these 10 donations
-    const { search, status, timePeriod } = req.query;
-    let filteredDonations = recentDonations;
-
-    if (status && status !== 'All') {
-      filteredDonations = filteredDonations.filter(d => d.status.toLowerCase() === status.toLowerCase());
-    }
-
-    if (timePeriod && timePeriod !== 'All Time') {
-      const today = new Date();
-      let startDate;
-
-      switch (timePeriod) {
-        case 'Weekly':
-          startDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case 'Monthly':
-          startDate = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-          break;
-        case 'Yearly':
-          startDate = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
-          break;
-        default:
-          startDate = null;
-      }
-
-      if (startDate) {
-        filteredDonations = filteredDonations.filter(d => new Date(d.createdAt) >= startDate);
-      }
-    }
-
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filteredDonations = filteredDonations.filter(d => 
-        d.transactionId.toLowerCase().includes(searchLower) ||
-        (d.email && d.email.toLowerCase().includes(searchLower)) ||
-        (d.user?.name && d.user.name.toLowerCase().includes(searchLower))
-      );
-    }
-
-    // 3️⃣ Format for frontend
-    const formattedDonations = filteredDonations.map(d => ({
+    // Format for frontend
+    const formattedDonations = donations.map(d => ({
       id: d.id,
       transactionId: d.transactionId,
-      name: d.user.name,
+      name: d.user?.name ? d.user.name : d.name,
       amount: d.amount,
       email: d.email,
       date: new Date(d.createdAt).toISOString().split('T')[0],
@@ -122,7 +95,13 @@ export const getAllDonations = async (req, res) => {
       status: d.status,
     }));
 
-    res.status(200).json(formattedDonations);
+    res.status(200).json({
+      donations: formattedDonations,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
 
   } catch (error) {
     console.error('Error fetching donations:', error);
@@ -130,6 +109,21 @@ export const getAllDonations = async (req, res) => {
   }
 };
 
+// Also add a delete endpoint if you don't have one
+export const deleteDonation = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.donation.delete({
+      where: { id: parseInt(id) }
+    });
+
+    res.status(200).json({ message: 'Donation deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting donation:', error);
+    res.status(500).json({ message: 'Error deleting donation', error: error.message });
+  }
+};
 /**
  * @desc    Get donation statistics
  * @route   GET /api/donations/stats
@@ -191,7 +185,7 @@ export const getDonationStats = async (req, res) => {
  */
 export const createDonation = async (req, res) => {
   try {
-    const { amount,email,pan } = req.body;
+    const { amount,email,pan,name } = req.body;
 
     const userId = req.user?.id; // from verifyToken
 
@@ -205,7 +199,7 @@ export const createDonation = async (req, res) => {
     const redirectUrl = `${process.env.BACKEND_URL}/api/donations/callback?orderId=${merchantOrderId}`;
 
     const metaInfo = MetaInfo.builder()
-      .udf1(String(userId))
+      .udf1(String(userId)||name)
       .udf2("Donation Payment")
       .build();
 
@@ -225,13 +219,14 @@ export const createDonation = async (req, res) => {
 
     await prisma.donation.create({
       data: {
-        userId,
+        userId:userId?userId :null,
         amount,
         status: "pending",
         paymentMethod: "phonepe",
         transactionId: merchantOrderId,
         email,
-        pan,
+        pan:pan?pan:'',
+        name:name
       },
     });
 

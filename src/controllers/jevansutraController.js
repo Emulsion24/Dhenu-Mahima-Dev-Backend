@@ -7,18 +7,96 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const BASE_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+const BASE_URL = process.env.BACKEND_URL;
 
-// 🟢 Get all bhajans
+// 🟢 Get all bhajans with pagination and search
 export const getAllBhajans = async (req, res) => {
   try {
-    const bhajans = await prisma.bhajan.findMany({
-      orderBy: { createdAt: 'desc' },
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = '', 
+      sortBy = 'createdAt', 
+      sortOrder = 'desc' 
+    } = req.query;
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build where clause for search
+    const whereClause = search
+      ? {
+          OR: [
+            { name: { contains: search,  } },
+            { artist: { contains: search,  } },
+            { album: { contains: search,  } },
+          ],
+        }
+      : {};
+
+    // Get total count for pagination
+    const totalCount = await prisma.bhajan.count({
+      where: whereClause,
     });
-    res.status(200).json(bhajans);
+
+    // Get paginated bhajans
+    const bhajans = await prisma.bhajan.findMany({
+      where: whereClause,
+      orderBy: { [sortBy]: sortOrder },
+      skip: skip,
+      take: limitNum,
+    });
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalCount / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
+
+    res.status(200).json({
+      success: true,
+      data: bhajans,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalCount,
+        limit: limitNum,
+        hasNextPage,
+        hasPrevPage,
+      },
+    });
   } catch (error) {
     console.error('Error fetching bhajans:', error);
-    res.status(500).json({ message: 'Failed to fetch bhajans', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch bhajans', 
+      error: error.message 
+    });
+  }
+};
+
+// 🟢 Get latest bhajans (for homepage - no pagination)
+export const getLatestBhajans = async (req, res) => {
+  try {
+    const { limit = 5 } = req.query;
+    const limitNum = parseInt(limit);
+
+    const bhajans = await prisma.bhajan.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limitNum,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: bhajans,
+    });
+  } catch (error) {
+    console.error('Error fetching latest bhajans:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch latest bhajans', 
+      error: error.message 
+    });
   }
 };
 
@@ -27,11 +105,25 @@ export const getBhajanById = async (req, res) => {
   try {
     const { id } = req.params;
     const bhajan = await prisma.bhajan.findUnique({ where: { id } });
-    if (!bhajan) return res.status(404).json({ message: 'Bhajan not found' });
-    res.status(200).json(bhajan);
+    
+    if (!bhajan) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Bhajan not found' 
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: bhajan,
+    });
   } catch (error) {
     console.error('Error fetching bhajan:', error);
-    res.status(500).json({ message: 'Failed to fetch bhajan', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch bhajan', 
+      error: error.message 
+    });
   }
 };
 
@@ -41,14 +133,20 @@ export const createBhajan = async (req, res) => {
     const { name, artist, album, duration } = req.body;
 
     if (!name || !artist) {
-      return res.status(400).json({ message: 'Name and artist are required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Name and artist are required' 
+      });
     }
 
     if (!req.files || !req.files.audio) {
-      return res.status(400).json({ message: 'Audio file is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Audio file is required' 
+      });
     }
 
-    const audioFile = req.files.audio[0]; // Multer saves files as arrays
+    const audioFile = req.files.audio[0];
     const imageFile = req.files.image ? req.files.image[0] : null;
 
     const audioUrl = `${BASE_URL}/uploads/audio/${audioFile.filename}`;
@@ -71,10 +169,18 @@ export const createBhajan = async (req, res) => {
       },
     });
 
-    res.status(201).json(bhajan);
+    res.status(201).json({
+      success: true,
+      message: 'Bhajan created successfully',
+      data: bhajan,
+    });
   } catch (error) {
     console.error('Error creating bhajan:', error);
-    res.status(500).json({ message: 'Failed to create bhajan', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to create bhajan', 
+      error: error.message 
+    });
   }
 };
 
@@ -85,7 +191,12 @@ export const updateBhajan = async (req, res) => {
     const { name, artist, album, duration } = req.body;
 
     const existingBhajan = await prisma.bhajan.findUnique({ where: { id } });
-    if (!existingBhajan) return res.status(404).json({ message: 'Bhajan not found' });
+    if (!existingBhajan) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Bhajan not found' 
+      });
+    }
 
     let audioUrl = existingBhajan.audioUrl;
     let audioPath = existingBhajan.audioPath;
@@ -132,21 +243,33 @@ export const updateBhajan = async (req, res) => {
       },
     });
 
-    res.status(200).json(updatedBhajan);
+    res.status(200).json({
+      success: true,
+      message: 'Bhajan updated successfully',
+      data: updatedBhajan,
+    });
   } catch (error) {
     console.error('Error updating bhajan:', error);
-    res.status(500).json({ message: 'Failed to update bhajan', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to update bhajan', 
+      error: error.message 
+    });
   }
 };
 
 // 🟢 Delete bhajan
 export const deleteBhajan = async (req, res) => {
   try {
-    
     const { id } = req.params;
  
     const bhajan = await prisma.bhajan.findUnique({ where: { id } });
-    if (!bhajan) return res.status(404).json({ message: 'Bhajan not found' });
+    if (!bhajan) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Bhajan not found' 
+      });
+    }
 
     try {
       await fs.unlink(bhajan.audioPath);
@@ -164,15 +287,22 @@ export const deleteBhajan = async (req, res) => {
     }
 
     await prisma.bhajan.delete({ where: { id } });
-    res.status(200).json({ message: 'Bhajan deleted successfully' });
+    
+    res.status(200).json({ 
+      success: true,
+      message: 'Bhajan deleted successfully' 
+    });
   } catch (error) {
     console.error('Error deleting bhajan:', error);
-    res.status(500).json({ message: 'Failed to delete bhajan', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to delete bhajan', 
+      error: error.message 
+    });
   }
 };
 
 // 🟢 Stream bhajan audio
-
 export const streamAudio = async (req, res) => {
   try {
     const { filename } = req.params;
@@ -187,7 +317,7 @@ export const streamAudio = async (req, res) => {
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type");
     res.setHeader("Accept-Ranges", "bytes");
-    res.setHeader("Cache-Control", "public, max-age=86400"); // optional
+    res.setHeader("Cache-Control", "public, max-age=86400");
 
     if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
@@ -217,7 +347,10 @@ export const streamAudio = async (req, res) => {
     }
   } catch (err) {
     console.error("❌ Error streaming audio:", err);
-    res.status(404).json({ message: "Audio not found" });
+    res.status(404).json({ 
+      success: false,
+      message: "Audio not found" 
+    });
   }
 };
 
@@ -229,31 +362,66 @@ export const downloadAudio = async (req, res) => {
     res.download(audioPath);
   } catch (err) {
     console.error('Error downloading file:', err);
-    res.status(404).json({ message: 'File not found' });
+    res.status(404).json({ 
+      success: false,
+      message: 'File not found' 
+    });
   }
 };
 
-// 🟢 Search bhajans
+// 🟢 Search bhajans (Alternative search endpoint - now redundant but kept for compatibility)
 export const searchBhajans = async (req, res) => {
   try {
-    const { query } = req.query;
+    const { query, page = 1, limit = 10 } = req.query;
 
-    if (!query) return res.status(400).json({ message: 'Search query is required' });
+    if (!query) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Search query is required' 
+      });
+    }
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const whereClause = {
+      OR: [
+        { name: { contains: query, mode: 'insensitive' } },
+        { artist: { contains: query, mode: 'insensitive' } },
+        { album: { contains: query, mode: 'insensitive' } },
+      ],
+    };
+
+    const totalCount = await prisma.bhajan.count({ where: whereClause });
 
     const bhajans = await prisma.bhajan.findMany({
-      where: {
-        OR: [
-          { name: { contains: query} },
-          { artist: { contains: query} },
-          { album: { contains: query} },
-        ],
-      },
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
+      skip: skip,
+      take: limitNum,
     });
 
-    res.status(200).json(bhajans);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    res.status(200).json({
+      success: true,
+      data: bhajans,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalCount,
+        limit: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      },
+    });
   } catch (error) {
     console.error('Error searching bhajans:', error);
-    res.status(500).json({ message: 'Failed to search bhajans', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to search bhajans', 
+      error: error.message 
+    });
   }
 };

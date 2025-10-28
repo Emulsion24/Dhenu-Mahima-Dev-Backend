@@ -22,3 +22,20 @@ export function requireRole(role) {
     next();
   };
 }
+export const optionalAuth = (req, res, next) => {
+  const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
+
+  if (!token) {
+    req.user = null; // guest user
+    return next();
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded; // { id, role, ... }
+  } catch (error) {
+    req.user = null; // invalid token, treat as guest
+  }
+
+  next();
+};
