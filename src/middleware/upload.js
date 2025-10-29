@@ -38,7 +38,7 @@ const fileFilter = (req, file, cb) => {
   const mime = file.mimetype;
 
   if (file.fieldname === 'audio') {
-    const allowed = /mp3|wav|mpeg/;
+    const allowed = /mp3|wav|mpeg|m4a/;
     return allowed.test(ext) && allowed.test(mime)
       ? cb(null, true)
       : cb(new Error('Only audio files are allowed (mp3, wav, mpeg)'));
