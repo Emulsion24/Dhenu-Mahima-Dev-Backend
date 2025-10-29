@@ -278,7 +278,7 @@ export const donationCallback = async (req, res) => {
 
     // Redirect user to frontend with status
     return res.redirect(
-      `${process.env.FRONTEND_URL}/donation-status?status=${status}&orderId=${merchantTransactionId}`
+      `${process.env.FRONTEND_URL}/donation-status?status=${status}&txn=${merchantTransactionId}&amount=${updatedDonation.amount}`
     );
   } catch (err) {
     console.error("Donation Callback Error:", err.message);

@@ -7,7 +7,7 @@ import { prisma } from "../prisma/config.js";
 dotenv.config();
 
 // PhonePe AutoPay Configuration
-const PHONEPE_BASE_URL = process.env.NODE_ENV === "production"
+const PHONEPE_BASE_URL = process.env.NODE_ENV_PHONEPE === "production"
   ? "https://api.phonepe.com/apis/pg"
   : "https://api-preprod.phonepe.com/apis/pg-sandbox";
 
