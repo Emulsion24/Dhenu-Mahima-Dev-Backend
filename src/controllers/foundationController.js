@@ -350,6 +350,7 @@ export const updateFoundation = async (req, res) => {
     ]).catch(err => console.error('Cache clear error:', err));
 
     res.json(foundation);
+    console.log(foundation);
   } catch (error) {
     // Clean up uploaded file if it exists
     if (uploadedFile) {
@@ -388,7 +389,8 @@ export const deleteFoundation = async (req, res) => {
     // Clear cache (non-blocking)
     Promise.all([
       clearCachePattern('foundations:*'),
-      redisClient.del(`foundation:${foundationId}`)
+      redisClient.del(`foundation:${foundationId}`),
+      redisClient.del('foundation_data'),
     ]).catch(err => console.error('Cache clear error:', err));
 
     res.json({ message: 'Foundation deleted successfully' });

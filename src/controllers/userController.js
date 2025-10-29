@@ -159,6 +159,7 @@ export async function addUser(req, res) {
         phone,
         role: role.toLowerCase(),
         password: hashedPassword,
+        isVerified:true,
       },
       select: {
         id: true,

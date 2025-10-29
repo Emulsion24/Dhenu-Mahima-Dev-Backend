@@ -210,10 +210,11 @@ model GopalPariwar {
   heroSubtitle        String
   personalInfo        Json
   spiritualEducation  String?
-  socialLinks         String?
+  socialLinks         Json?
   lifeJourney         Json
   responsibilities    Json
   pledges             Json
+  order               Int?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
