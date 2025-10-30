@@ -2,56 +2,74 @@ import {prisma} from "../prisma/config.js";
 import cloudinary from '../utils/cloudinary.js';
 import fs from "fs/promises";
 
-// Create a new GopalPariwar
+
+
 export const createGopal = async (req, res) => {
-  let uploadedFile = null;
-    
-    try {
-      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
-    
-      uploadedFile = req.file.path;
-  
-      // Upload to Cloudinary
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: "gopalpariwar",
-        resource_type: "image",
-      });
-  
-      // Delete local file after upload
-      await fs.unlink(req.file.path);
-      uploadedFile = null;
-  
-    const { heroTitle,   socialLinks ,responsibilities, heroSubtitle,personalInfo, lifeJourney,pledges,spiritualEducation} = req.body;
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
 
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "gopalpariwar",
+      resource_type: "image",
+    });
 
+    // Delete local file after upload
+    await fs.unlink(req.file.path);
 
+    const {
+      heroTitle,
+      heroSubtitle,
+      personalInfo,
+      spiritualEducation,
+      lifeJourney,
+      responsibilities,
+      pledges,
+      socialLinks,
+    } = req.body;
 
+    // 🧮 Get the current max order
+    const maxOrderObj = await prisma.gopalPariwar.aggregate({
+      _max: { order: true },
+    });
 
-const newGopal= await prisma.gopalPariwar.create({
-  data: {
-    heroImage:result.secure_url,
-    heroTitle,
-    heroSubtitle,
-    personalInfo,       // Json field, OK
-    spiritualEducation: JSON.stringify(spiritualEducation), // <-- stringify
-    lifeJourney,
-    responsibilities,
-    pledges,
-    socialLinks:JSON.stringify(socialLinks),
-  }
-});
+    const nextOrder = (maxOrderObj._max.order || 0) + 1;
+
+    // ✅ Create new Gopal entry with the next order automatically
+    const newGopal = await prisma.gopalPariwar.create({
+      data: {
+        heroImage: result.secure_url,
+        heroTitle,
+        heroSubtitle,
+        personalInfo,
+        spiritualEducation: JSON.stringify(spiritualEducation),
+        lifeJourney,
+        responsibilities,
+        pledges,
+        socialLinks: JSON.stringify(socialLinks),
+        order: nextOrder,
+      },
+    });
 
     res.status(201).json(newGopal);
   } catch (err) {
-    console.error(err);
+    console.error("Error creating GopalPariwar:", err);
     res.status(500).json({ error: "Failed to create GopalPariwar data" });
   }
 };
 
+
+
 // Get all GopalPariwar
 export const getAllGopal = async (req, res) => {
   try {
-    const gopals = await prisma.gopalPariwar.findMany();
+    const gopals = await prisma.gopalPariwar.findMany({
+      orderBy: {
+        order: "asc",
+      },
+    });
     res.status(200).json(gopals);
   } catch (err) {
     console.error(err);
@@ -78,17 +96,85 @@ if (isNaN(idInt)) {
 
 // Update GopalPariwar
 export const updateGopal = async (req, res) => {
-   const id = parseInt(req.params.id);
-  const { heroImage, socialLinks, heroTitle, heroSubtitle, personalInfo, spiritualEducation, lifeJourney, responsibilities, pledges } = req.body;
+  const id = parseInt(req.params.id);
+  const {
+    heroImage,
+    socialLinks,
+    heroTitle,
+    heroSubtitle,
+    personalInfo,
+    spiritualEducation,
+    lifeJourney,
+    responsibilities,
+    pledges,
+    order, // 👈 comes from frontend
+  } = req.body;
 
   try {
-    const updatedGopal = await prisma.gopalPariwar.update({
-      where: { id: parseInt(id) },
-      data: { heroImage, heroTitle, heroSubtitle, personalInfo, spiritualEducation, lifeJourney, responsibilities, pledges, socialLinks },
+    // First, get existing record to compare current order
+    const existing = await prisma.gopalPariwar.findUnique({
+      where: { id },
+      select: { order: true },
     });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Record not found" });
+    }
+
+    const oldOrder = existing.order;
+    const newOrder = parseInt(order);
+
+    // If order field is provided and changed, handle shifting logic
+    if (!isNaN(newOrder) && newOrder !== oldOrder) {
+      if (newOrder < oldOrder) {
+        // Moving UP: Shift down records between newOrder and oldOrder - 1
+        await prisma.gopalPariwar.updateMany({
+          where: {
+            order: {
+              gte: newOrder,
+              lt: oldOrder,
+            },
+          },
+          data: {
+            order: { increment: 1 },
+          },
+        });
+      } else if (newOrder > oldOrder) {
+        // Moving DOWN: Shift up records between oldOrder + 1 and newOrder
+        await prisma.gopalPariwar.updateMany({
+          where: {
+            order: {
+              gt: oldOrder,
+              lte: newOrder,
+            },
+          },
+          data: {
+            order: { decrement: 1 },
+          },
+        });
+      }
+    }
+
+    // Now update the current record
+    const updatedGopal = await prisma.gopalPariwar.update({
+      where: { id },
+      data: {
+        heroImage,
+        heroTitle,
+        heroSubtitle,
+        personalInfo,
+        spiritualEducation,
+        lifeJourney,
+        responsibilities,
+        pledges,
+        socialLinks,
+        ...(order && { order: newOrder }), // update order if provided
+      },
+    });
+
     res.status(200).json(updatedGopal);
   } catch (err) {
-    console.error(err);
+    console.error("Error updating GopalPariwar:", err);
     res.status(500).json({ error: "Failed to update data" });
   }
 };
@@ -97,13 +183,40 @@ export const updateGopal = async (req, res) => {
 export const deleteGopal = async (req, res) => {
   const id = parseInt(req.params.id);
 
-  
-
   try {
-    await prisma.gopalPariwar.delete({ where: { id: id } });
-    res.status(200).json({ message: "Deleted successfully" });
+    // ✅ Find the record to know its order before deleting
+    const existing = await prisma.gopalPariwar.findUnique({
+      where: { id },
+      select: { order: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Gopal not found" });
+    }
+
+    const deletedOrder = existing.order;
+
+    // ✅ Delete the record
+    await prisma.gopalPariwar.delete({
+      where: { id },
+    });
+
+    // ✅ Shift all items below this up by 1
+    await prisma.gopalPariwar.updateMany({
+      where: {
+        order: {
+          gt: deletedOrder,
+        },
+      },
+      data: {
+        order: { decrement: 1 },
+      },
+    });
+
+    res.status(200).json({ message: "Deleted successfully and order updated" });
   } catch (err) {
-    console.error(err);
+    console.error("Error deleting GopalPariwar:", err);
     res.status(500).json({ error: "Failed to delete data" });
   }
 };
+

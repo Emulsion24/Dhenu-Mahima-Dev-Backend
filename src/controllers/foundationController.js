@@ -48,6 +48,7 @@ export const getAllFoundations = async (req, res) => {
         take: limitNum,
         select: {
           id: true,
+          order:true,
           name: true,
           tagline: true,
           logoUrl: true,
@@ -72,7 +73,7 @@ export const getAllFoundations = async (req, res) => {
           },
           media: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { order: 'asc' },
       }),
       prisma.foundation.count({ where }),
     ]);
@@ -243,39 +244,79 @@ export const createFoundation = async (req, res) => {
 // Update foundation
 export const updateFoundation = async (req, res) => {
   let uploadedFile = null;
-  
+
   try {
     const foundationId = parseInt(req.params.id, 10);
+    const { order } = req.body; // ✅ new order from body if given
+    let logoUrl;
 
-    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+    // ✅ Upload new image only if provided
+    if (req.file) {
+      uploadedFile = req.file.path;
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "foundations",
+        resource_type: "image",
+      });
+      logoUrl = result.secure_url;
+      await fs.unlink(req.file.path);
+      uploadedFile = null;
+    }
 
-    uploadedFile = req.file.path;
+    const {
+      name,
+      tagline,
+      description,
+      establishedYear,
+      isActive,
+      stats,
+      activities,
+      objectives,
+      contact,
+    } = req.body;
 
-    // Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "foundations",
-      resource_type: "image",
-    });
-
-    // Delete local file after upload
-    await fs.unlink(req.file.path);
-    uploadedFile = null;
-
-    const { name, tagline, description, establishedYear, isActive, stats, activities, objectives, contact } = req.body;
     const parsedStats = stats ? JSON.parse(stats) : [];
     const parsedActivities = activities ? JSON.parse(activities) : [];
     const parsedObjectives = objectives ? JSON.parse(objectives) : [];
     const parsedContact = contact ? JSON.parse(contact) : null;
 
-    // Use transaction - this ensures connection is released properly
-    const [oldFoundation, foundation] = await prisma.$transaction(async (tx) => {
-      // Fetch old data within transaction
+    const updatedFoundation = await prisma.$transaction(async (tx) => {
       const old = await tx.foundation.findUnique({
         where: { id: foundationId },
         include: { stats: true, activities: true, objectives: true, contact: true },
       });
 
-      if (!old) throw new Error('Foundation not found');
+      if (!old) throw new Error("Foundation not found");
+
+      // ✅ Handle reordering logic if order is given
+      if (order && order !== old.order) {
+        const existing = await tx.foundation.findFirst({ where: { order: parseInt(order) } });
+
+        if (existing) {
+          if (order < old.order) {
+            // Move up - shift down others between new and old order
+            await tx.foundation.updateMany({
+              where: {
+                order: {
+                  gte: parseInt(order),
+                  lt: old.order,
+                },
+              },
+              data: { order: { increment: 1 } },
+            });
+          } else {
+            // Move down - shift up others between old and new order
+            await tx.foundation.updateMany({
+              where: {
+                order: {
+                  gt: old.order,
+                  lte: parseInt(order),
+                },
+              },
+              data: { order: { decrement: 1 } },
+            });
+          }
+        }
+      }
 
       // Delete old nested relations
       await Promise.all([
@@ -284,88 +325,86 @@ export const updateFoundation = async (req, res) => {
         tx.foundationObjective.deleteMany({ where: { foundationId } }),
       ]);
 
-      // Update foundation
+      // ✅ Update foundation data
       const updated = await tx.foundation.update({
         where: { id: foundationId },
         data: {
           name,
           tagline,
-          logoUrl: result.secure_url,
+          logoUrl: logoUrl || old.logoUrl,
           description,
           establishedYear,
           isActive,
+          order: order ? parseInt(order) : old.order, // ✅ order handled
           updatedById: req.user.id,
           stats: {
             create: parsedStats.map((s, i) => ({
               label: s.label,
               value: s.value,
-              displayOrder: i
-            }))
+              displayOrder: i,
+            })),
           },
           activities: {
             create: parsedActivities.map((a, i) => ({
               activityText: a,
-              displayOrder: i
-            }))
+              displayOrder: i,
+            })),
           },
           objectives: {
             create: parsedObjectives.map((o, i) => ({
               title: o.title,
               description: o.description || "",
               objectiveType: o.objectiveType || "main",
-              displayOrder: i
-            }))
+              displayOrder: i,
+            })),
           },
-          contact: parsedContact ? {
-            upsert: {
-              create: {
-                email: parsedContact.email,
-                phone: parsedContact.phone,
-                address: parsedContact.address,
-                website: parsedContact.website,
-                socialMediaLinks: parsedContact.socialMediaLinks || {},
-              },
-              update: {
-                email: parsedContact.email,
-                phone: parsedContact.phone,
-                address: parsedContact.address,
-                website: parsedContact.website,
-                socialMediaLinks: parsedContact.socialMediaLinks || {},
-              },
-            },
-          } : undefined,
+          contact: parsedContact
+            ? {
+                upsert: {
+                  create: {
+                    email: parsedContact.email,
+                    phone: parsedContact.phone,
+                    address: parsedContact.address,
+                    website: parsedContact.website,
+                    socialMediaLinks: parsedContact.socialMediaLinks || {},
+                  },
+                  update: {
+                    email: parsedContact.email,
+                    phone: parsedContact.phone,
+                    address: parsedContact.address,
+                    website: parsedContact.website,
+                    socialMediaLinks: parsedContact.socialMediaLinks || {},
+                  },
+                },
+              }
+            : undefined,
         },
         include: { stats: true, activities: true, objectives: true, contact: true },
       });
 
-      return [old, updated];
-    }, {
-      timeout: 15000, // Increase transaction timeout to 15s
+      return updated;
     });
 
-    // Clear cache (non-blocking)
+    // ✅ Clear cache (non-blocking)
     Promise.all([
-      clearCachePattern('foundations:*'),
-      redisClient.del(`foundation:${foundationId}`)
-    ]).catch(err => console.error('Cache clear error:', err));
+      clearCachePattern("foundations:*"),
+      redisClient.del(`foundation:${foundationId}`),
+        redisClient.del("foundation_data"),
+    ]).catch((err) => console.error("Cache clear error:", err));
 
-    res.json(foundation);
-    console.log(foundation);
+    res.json(updatedFoundation);
   } catch (error) {
-    // Clean up uploaded file if it exists
-    if (uploadedFile) {
-      await fs.unlink(uploadedFile).catch(() => {});
+    if (uploadedFile) await fs.unlink(uploadedFile).catch(() => {});
+    console.error("Update foundation error:", error);
+
+    if (error.message === "Foundation not found") {
+      return res.status(404).json({ error: "Foundation not found" });
     }
-    
-    console.error('Update foundation error:', error);
-    
-    if (error.message === 'Foundation not found') {
-      return res.status(404).json({ error: 'Foundation not found' });
-    }
-    
-    res.status(500).json({ error: 'Failed to update foundation' });
+
+    res.status(500).json({ error: "Failed to update foundation" });
   }
 };
+
 
 // Delete foundation
 export const deleteFoundation = async (req, res) => {
@@ -373,34 +412,49 @@ export const deleteFoundation = async (req, res) => {
     const foundationId = parseInt(req.params.id, 10);
 
     // Use transaction to ensure atomicity
-    const foundation = await prisma.$transaction(async (tx) => {
-      const found = await tx.foundation.findUnique({ 
+    const deletedFoundation = await prisma.$transaction(async (tx) => {
+      // 🔹 Find foundation with order before deleting
+      const found = await tx.foundation.findUnique({
         where: { id: foundationId },
-        include: { stats: true, activities: true, objectives: true, contact: true }
+        include: { stats: true, activities: true, objectives: true, contact: true },
       });
 
-      if (!found) throw new Error('Foundation not found');
+      if (!found) throw new Error("Foundation not found");
 
-      await tx.foundation.delete({ where: { id: foundationId } });
+      const deletedOrder = found.order;
+
+      // 🔹 Delete foundation and its relations
+      await Promise.all([
+        tx.foundationStat.deleteMany({ where: { foundationId } }),
+        tx.foundationActivity.deleteMany({ where: { foundationId } }),
+        tx.foundationObjective.deleteMany({ where: { foundationId } }),
+        tx.foundation.delete({ where: { id: foundationId } }),
+      ]);
+
+      // 🔹 Shift up (decrement) all foundations that had higher order
+      await tx.foundation.updateMany({
+        where: { order: { gt: deletedOrder } },
+        data: { order: { decrement: 1 } },
+      });
 
       return found;
     });
 
-    // Clear cache (non-blocking)
+    // ✅ Clear cache (non-blocking)
     Promise.all([
-      clearCachePattern('foundations:*'),
+      clearCachePattern("foundations:*"),
       redisClient.del(`foundation:${foundationId}`),
-      redisClient.del('foundation_data'),
-    ]).catch(err => console.error('Cache clear error:', err));
+      redisClient.del("foundation_data"),
+    ]).catch((err) => console.error("Cache clear error:", err));
 
-    res.json({ message: 'Foundation deleted successfully' });
+    res.json({ message: "Foundation deleted successfully" });
   } catch (error) {
-    console.error('Delete foundation error:', error);
-    
-    if (error.message === 'Foundation not found') {
-      return res.status(404).json({ error: 'Foundation not found' });
+    console.error("Delete foundation error:", error);
+
+    if (error.message === "Foundation not found") {
+      return res.status(404).json({ error: "Foundation not found" });
     }
-    
-    res.status(500).json({ error: 'Failed to delete foundation' });
+
+    res.status(500).json({ error: "Failed to delete foundation" });
   }
 };

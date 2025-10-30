@@ -16,8 +16,8 @@ export const getAllBhajans = async (req, res) => {
       page = 1, 
       limit = 10, 
       search = '', 
-      sortBy = 'createdAt', 
-      sortOrder = 'desc' 
+     sortBy = 'order',   // ✅ Default sorting by 'order'
+      sortOrder = 'desc'  
     } = req.query;
 
     const pageNum = parseInt(page);
@@ -82,7 +82,7 @@ export const getLatestBhajans = async (req, res) => {
     const limitNum = parseInt(limit);
 
     const bhajans = await prisma.bhajan.findMany({
-      orderBy: { createdAt: 'desc' },
+     orderBy: { order: 'desc' },
       take: limitNum,
     });
 
@@ -132,31 +132,38 @@ export const createBhajan = async (req, res) => {
   try {
     const { name, artist, album, duration } = req.body;
 
+    // ✅ Basic validation
     if (!name || !artist) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'Name and artist are required' 
+        message: 'Name and artist are required',
       });
     }
 
     if (!req.files || !req.files.audio) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'Audio file is required' 
+        message: 'Audio file is required',
       });
     }
 
+    // ✅ Get files
     const audioFile = req.files.audio[0];
     const imageFile = req.files.image ? req.files.image[0] : null;
 
     const audioUrl = `${BASE_URL}/uploads/audio/${audioFile.filename}`;
     const audioPath = audioFile.path;
+    const imageUrl = imageFile ? `${BASE_URL}/uploads/images/${imageFile.filename}` : null;
 
-    let imageUrl = null;
-    if (imageFile) {
-      imageUrl = `${BASE_URL}/uploads/images/${imageFile.filename}`;
-    }
+    // ✅ Get last order and set new order = last + 1
+    const lastBhajan = await prisma.bhajan.findFirst({
+      orderBy: { order: 'desc' },
+      select: { order: true },
+    });
 
+    const newOrder = lastBhajan ? lastBhajan.order + 1 : 1;
+
+    // ✅ Create new Bhajan
     const bhajan = await prisma.bhajan.create({
       data: {
         name,
@@ -166,6 +173,7 @@ export const createBhajan = async (req, res) => {
         audioUrl,
         audioPath,
         imageUrl,
+        order: newOrder,
       },
     });
 
@@ -176,25 +184,30 @@ export const createBhajan = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating bhajan:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to create bhajan', 
-      error: error.message 
+      message: 'Failed to create bhajan',
+      error: error.message,
     });
   }
 };
+
 
 // 🟢 Update bhajan
 export const updateBhajan = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, artist, album, duration } = req.body;
+    const { name, artist, album, duration, order } = req.body; // ✅ Include order
 
-    const existingBhajan = await prisma.bhajan.findUnique({ where: { id } });
+    const bhajanId = id;
+    const newOrder = order ? parseInt(order) : null;
+
+    const existingBhajan = await prisma.bhajan.findUnique({ where: { id: bhajanId } });
+
     if (!existingBhajan) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Bhajan not found' 
+        message: "Bhajan not found",
       });
     }
 
@@ -202,12 +215,12 @@ export const updateBhajan = async (req, res) => {
     let audioPath = existingBhajan.audioPath;
     let imageUrl = existingBhajan.imageUrl;
 
-    // Replace audio if new uploaded
+    // ✅ Handle new audio upload
     if (req.files?.audio) {
       try {
         await fs.unlink(existingBhajan.audioPath);
       } catch (err) {
-        console.warn('Old audio not found, skipping delete.');
+        console.warn("Old audio not found, skipping delete.");
       }
 
       const audioFile = req.files.audio[0];
@@ -215,14 +228,14 @@ export const updateBhajan = async (req, res) => {
       audioUrl = `${BASE_URL}/uploads/audio/${audioFile.filename}`;
     }
 
-    // Replace image if new uploaded
+    // ✅ Handle new image upload
     if (req.files?.image) {
       if (existingBhajan.imageUrl) {
         try {
-          const oldImagePath = path.join(__dirname, '..', existingBhajan.imageUrl.replace(BASE_URL, ''));
+          const oldImagePath = path.join(__dirname, "..", existingBhajan.imageUrl.replace(BASE_URL, ""));
           await fs.unlink(oldImagePath);
         } catch (err) {
-          console.warn('Old image not found, skipping delete.');
+          console.warn("Old image not found, skipping delete.");
         }
       }
 
@@ -230,50 +243,112 @@ export const updateBhajan = async (req, res) => {
       imageUrl = `${BASE_URL}/uploads/images/${imageFile.filename}`;
     }
 
-    const updatedBhajan = await prisma.bhajan.update({
-      where: { id },
-      data: {
-        name: name || existingBhajan.name,
-        artist: artist || existingBhajan.artist,
-        album: album ?? existingBhajan.album,
-        duration: duration || existingBhajan.duration,
-        audioUrl,
-        audioPath,
-        imageUrl,
-      },
-    });
+    // ✅ Reorder logic — adjust other bhajans
+    if (newOrder && newOrder !== existingBhajan.order) {
+      const totalBhajans = await prisma.bhajan.count();
+
+      if (newOrder < 1 || newOrder > totalBhajans) {
+        return res.status(400).json({
+          success: false,
+          message: `Order must be between 1 and ${totalBhajans}`,
+        });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        // If moving up (e.g. from 5 → 2)
+        if (newOrder < existingBhajan.order) {
+          await tx.bhajan.updateMany({
+            where: {
+              order: {
+                gte: newOrder,
+                lt: existingBhajan.order,
+              },
+            },
+            data: {
+              order: { increment: 1 },
+            },
+          });
+        }
+        // If moving down (e.g. from 2 → 5)
+        else {
+          await tx.bhajan.updateMany({
+            where: {
+              order: {
+                gt: existingBhajan.order,
+                lte: newOrder,
+              },
+            },
+            data: {
+              order: { decrement: 1 },
+            },
+          });
+        }
+
+        // ✅ Finally update the selected Bhajan
+        await tx.bhajan.update({
+          where: { id: bhajanId },
+          data: {
+            name: name || existingBhajan.name,
+            artist: artist || existingBhajan.artist,
+            album: album ?? existingBhajan.album,
+            duration: duration || existingBhajan.duration,
+            audioUrl,
+            audioPath,
+            imageUrl,
+            order: newOrder,
+          },
+        });
+      });
+    } else {
+      // ✅ No reordering, just normal update
+      await prisma.bhajan.update({
+        where: { id: bhajanId },
+        data: {
+          name: name || existingBhajan.name,
+          artist: artist || existingBhajan.artist,
+          album: album ?? existingBhajan.album,
+          duration: duration || existingBhajan.duration,
+          audioUrl,
+          audioPath,
+          imageUrl,
+        },
+      });
+    }
 
     res.status(200).json({
       success: true,
-      message: 'Bhajan updated successfully',
-      data: updatedBhajan,
+      message: "Bhajan updated successfully",
     });
   } catch (error) {
-    console.error('Error updating bhajan:', error);
-    res.status(500).json({ 
+    console.error("Error updating bhajan:", error);
+    res.status(500).json({
       success: false,
-      message: 'Failed to update bhajan', 
-      error: error.message 
+      message: "Failed to update bhajan",
+      error: error.message,
     });
   }
 };
+
 
 // 🟢 Delete bhajan
 export const deleteBhajan = async (req, res) => {
   try {
     const { id } = req.params;
- 
-    const bhajan = await prisma.bhajan.findUnique({ where: { id } });
+    const bhajanId = parseInt(id);
+
+    // ✅ Find the bhajan first
+    const bhajan = await prisma.bhajan.findUnique({ where: { id: bhajanId } });
     if (!bhajan) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Bhajan not found' 
+        message: 'Bhajan not found',
       });
     }
 
+    // ✅ Delete associated files (audio + image)
     try {
-      await fs.unlink(bhajan.audioPath);
-    } catch (err) {
+      if (bhajan.audioPath) await fs.unlink(bhajan.audioPath);
+    } catch {
       console.warn('Audio file not found while deleting.');
     }
 
@@ -281,26 +356,38 @@ export const deleteBhajan = async (req, res) => {
       try {
         const imagePath = path.join(__dirname, '..', bhajan.imageUrl.replace(BASE_URL, ''));
         await fs.unlink(imagePath);
-      } catch (err) {
+      } catch {
         console.warn('Image file not found while deleting.');
       }
     }
 
-    await prisma.bhajan.delete({ where: { id } });
-    
-    res.status(200).json({ 
+    // ✅ Use a transaction to delete and reorder safely
+    await prisma.$transaction(async (tx) => {
+      // 1️⃣ Delete the selected bhajan
+      await tx.bhajan.delete({ where: { id: bhajanId } });
+
+      // 2️⃣ Decrease order of all bhajans that were after it
+      await tx.bhajan.updateMany({
+        where: { order: { gt: bhajan.order } },
+        data: { order: { decrement: 1 } },
+      });
+    });
+
+    // ✅ Response
+    res.status(200).json({
       success: true,
-      message: 'Bhajan deleted successfully' 
+      message: 'Bhajan deleted successfully and order updated',
     });
   } catch (error) {
     console.error('Error deleting bhajan:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to delete bhajan', 
-      error: error.message 
+      message: 'Failed to delete bhajan',
+      error: error.message,
     });
   }
 };
+
 
 // 🟢 Stream bhajan audio
 export const streamAudio = async (req, res) => {

@@ -228,7 +228,7 @@ model Gaushala {
   name           String
   photo          String?
   address        String
-  establishmentYear Int
+  establishmentYear String
   contactDetails String
   totalCows      Int
   capacity       Int
@@ -374,6 +374,7 @@ model Foundation {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   createdById     Int?      @map("created_by_id")
   updatedById     Int?      @map("updated_by_id")
+  order     Int              @default(0)
 
   stats              FoundationStat[]
   activities         FoundationActivity[]
@@ -496,6 +497,7 @@ model Event {
 
 model Bhajan {
   id          String   @id @default(uuid())
+  order     Int              @default(0)
   name        String
   artist      String
   album       String?
@@ -542,9 +544,10 @@ model Gaumatabhajan {
 }
 
 
+// Main payment/membership model - supports both guest and user payments
 model MembershipPayment {
   id                     String   @id @default(uuid()) @db.VarChar(191)
-  userId                 Int
+  userId                 Int?     // Optional - NULL for guest payments
   name                   String   @db.VarChar(191)
   email                  String   @db.VarChar(191)
   phone                  String   @db.VarChar(191)
@@ -553,42 +556,125 @@ model MembershipPayment {
   state                  String   @db.VarChar(191)
   pincode                String   @db.VarChar(191)
   membershipType         String   @db.VarChar(191)
-  amount                 Int
-  status                 String   @default("pending") @db.VarChar(191)
+  amount                 Int      // Amount in paise
+  status                 String   @default("pending") @db.VarChar(191) // pending, active, failed, cancelled, expired
+  
+  // Order/Transaction IDs
   transactionId          String   @db.VarChar(191)
   orderId                String?  @db.VarChar(191)
-  phonePeOrderId         String?  @db.VarChar(191)
+  merchantOrderId        String?  @unique @db.VarChar(191)
+  
+  // PhonePe Subscription IDs (for AutoPay/recurring)
+  merchantSubscriptionId String?  @unique @db.VarChar(191)
   phonePeSubscriptionId  String?  @db.VarChar(191)
-  paymentMethod          String   @db.VarChar(191)
-  metadata               String?  @db.Text
+  authRequestId          String?  @db.VarChar(191)
+  
+  // Subscription Details (NULL for one-time payments)
+  subscriptionFrequency  String?  @db.VarChar(50) // YEARLY for subscriptions
+  recurringCount         Int?     // Number of recurring payments (e.g., 10 years)
+  amountType             String?  @db.VarChar(50) // FIXED or VARIABLE
+  authWorkflowType       String?  @db.VarChar(50) // TRANSACTION or PENNY_DROP
+  
+  // Subscription State (NULL for one-time payments)
+  subscriptionState      String?  @db.VarChar(50) // CREATED, ACTIVE, PAUSED, CANCELLED, COMPLETED, EXPIRED
+  subscriptionStartDate  DateTime?
+  subscriptionEndDate    DateTime?
+  nextBillingDate        DateTime?
+  
+  // Payment Details
+  paymentMethod          String   @db.VarChar(191) // UPI_COLLECT or UPI_AUTOPAY
+  providerReferenceId    String?  @db.VarChar(191)
+  payResponseCode        String?  @db.VarChar(191)
+  
+  // Metadata
+  metadata               String?  @db.Text // Store VPA, merchantUserId, etc.
+  callbackData           String?  @db.Text
+  
+  // Timestamps
   createdAt              DateTime @default(now()) @db.DateTime(3)
   updatedAt              DateTime @updatedAt @db.DateTime(3)
-
+  
+  // Relations
+  recurringPayments      RecurringPayment[]
+  
   @@index([orderId])
-  @@index([phonePeOrderId])
+  @@index([merchantOrderId])
+  @@index([merchantSubscriptionId])
   @@index([phonePeSubscriptionId])
+  @@index([authRequestId])
   @@index([transactionId])
   @@index([userId, status])
+  @@index([email])
+  @@index([phone])
+  @@index([subscriptionState])
+  @@index([nextBillingDate])
+  @@index([paymentMethod])
   @@map("membershipPayment")
 }
 
-// If you have a Payment model, ensure it has these fields:
+// Track recurring payments (yearly renewals)
+model RecurringPayment {
+  id                     String   @id @default(uuid()) @db.VarChar(191)
+  membershipPaymentId    String   @db.VarChar(191)
+  
+  // Redemption IDs
+  merchantRedemptionId   String   @unique @db.VarChar(191)
+  merchantOrderId        String   @db.VarChar(191)
+  
+  // Amount
+  amount                 Int      // Amount in paise
+  
+  // Status
+  status                 String   @db.VarChar(50) // PENDING, SUCCESS, FAILED
+  state                  String?  @db.VarChar(50) // ACCEPTED, COMPLETED, FAILED
+  
+  // PhonePe Details
+  providerReferenceId    String?  @db.VarChar(191)
+  payResponseCode        String?  @db.VarChar(191)
+  
+  // Dates
+  dueDate                DateTime
+  notifiedAt             DateTime? // When notify API was called (7 days before)
+  executedAt             DateTime? // When redeem API was called
+  completedAt            DateTime?
+  
+  // Metadata
+  callbackData           String?  @db.Text
+  metadata               String?  @db.Text
+  
+  createdAt              DateTime @default(now()) @db.DateTime(3)
+  updatedAt              DateTime @updatedAt @db.DateTime(3)
+  
+  // Relations
+  membershipPayment      MembershipPayment @relation(fields: [membershipPaymentId], references: [id], onDelete: Cascade)
+  
+  @@index([membershipPaymentId])
+  @@index([merchantRedemptionId])
+  @@index([merchantOrderId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("recurringPayment")
+}
+
+// General payment tracking
 model Payment {
   id          String   @id @default(uuid()) @db.VarChar(191)
-  userId      Int
-  referenceId String   @db.VarChar(191)
-  provider    String   @db.VarChar(191)
-  amount      Float
-  status      String   @db.VarChar(191)
+  userId      Int?     // Optional - NULL for guest payments
+  referenceId String   @db.VarChar(191) // Links to merchantOrderId or merchantSubscriptionId
+  provider    String   @db.VarChar(191) // PHONEPE
+  amount      Float    // Amount in rupees
+  status      String   @db.VarChar(191) // pending, success, failed
+  type        String?  @db.VarChar(50) // 'subscription_setup', 'recurring_payment', 'one_time'
   metadata    String?  @db.Text
   createdAt   DateTime @default(now()) @db.DateTime(3)
   updatedAt   DateTime @updatedAt @db.DateTime(3)
-
+  
   @@index([userId])
   @@index([referenceId])
   @@index([provider])
+  @@index([type])
+  @@index([status])
   @@map("payment")
-
-  user User @relation(fields: [userId], references: [id])
+  
+  user User? @relation(fields: [userId], references: [id])
 }
-

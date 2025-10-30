@@ -9,16 +9,40 @@ const parseContactDetails = (gs) => {
 
 
 // GET /api/gaushalas
+// GET /api/gaushalas
 export const getAllGaushalas = async (req, res) => {
   try {
-    const gaushalas = await prisma.gaushala.findMany({ orderBy: { createdAt: 'desc' } });
-    const formatted = gaushalas.map(parseContactDetails);
-    res.status(200).json({ success: true, data: formatted, count: formatted.length });
+    // Fetch all gaushalas
+    const gaushalas = await prisma.gaushala.findMany();
+
+    // Sort by establishmentYear (newest first)
+    const sortedGaushalas = gaushalas.sort((a, b) => {
+      const dateA = new Date(a.establishmentYear);
+      const dateB = new Date(b.establishmentYear);
+      // Handle missing or invalid dates
+      if (isNaN(dateA)) return 1;
+      if (isNaN(dateB)) return -1;
+      return dateB - dateA; // newest first
+    });
+
+    // Format contact details (if you’re using that util)
+    const formatted = sortedGaushalas.map(parseContactDetails);
+
+    res.status(200).json({
+      success: true,
+      data: formatted,
+      count: formatted.length,
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Error fetching Gau Shalas', error: err.message });
+    console.error("Error fetching Gau Shalas:", err);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching Gau Shalas",
+      error: err.message,
+    });
   }
 };
+
 
 // GET /api/gaushalas/:id
 export const getGaushalaById = async (req, res) => {
@@ -62,8 +86,7 @@ const { name, address, city, state, pincode, establishmentDate, totalCows, capac
      return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const establishmentYear = new Date(establishmentDate).getFullYear();
-
+   const establishmentYear= new Date(req.body.establishmentDate).toISOString();
     const newGaushala = await prisma.gaushala.create({
       data: {
         name,
@@ -90,55 +113,87 @@ const { name, address, city, state, pincode, establishmentDate, totalCows, capac
 
 // UPDATE GAUSHALA
 export const updateGaushala = async (req, res) => {
-   let uploadedFile = null;
-      
-      try {
+  try {
+    const gaushalaId = parseInt(req.params.id);
+    const existing = await prisma.gaushala.findUnique({ where: { id: gaushalaId } });
 
-       
-                   console.log(req.params.id)
-        uploadedFile = req.file.path;
-    
-        // Upload to Cloudinary
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Gaushala not found" });
+    }
+
+    let photoUrl = existing.photo; // default old photo
+
+    // 🖼️ Upload new image if provided
+    if (req.file && req.file.path) {
+      try {
         const result = await cloudinary.uploader.upload(req.file.path, {
           folder: "gaushalas",
           resource_type: "image",
         });
-    
+
+        photoUrl = result.secure_url;
+
         // Delete local file after upload
         await fs.unlink(req.file.path);
-        uploadedFile = null;
+      } catch (uploadErr) {
+        console.warn("Image upload failed:", uploadErr.message);
+      }
+    }
 
-    const { name, address, city, state, pincode, establishmentDate, totalCows, capacity, contactPerson, phone, email, description } = req.body;
+    // 🧾 Extract data from request body
+    const {
+      name,
+      address,
+      city,
+      state,
+      pincode,
+      establishmentDate,
+      totalCows,
+      capacity,
+      contactPerson,
+      phone,
+      email,
+      description,
+    } = req.body;
 
+    // 🗓️ Compute establishmentYear safely
+    // Node.js backend
+const establishmentYear= new Date(req.body.establishmentDate).toISOString();
 
-     const gaushalaId = parseInt(req.params.id);
-    const existing = await prisma.gaushala.findUnique({ where: { id: gaushalaId } });
-    if (!existing) return res.status(404).json({ success: false, message: 'Gau Shala not found' });
-
-    const establishmentYear = new Date(establishmentDate).getFullYear();
-
+    // ✅ Update the Gaushala record
     const updatedGaushala = await prisma.gaushala.update({
       where: { id: gaushalaId },
       data: {
-        name,
-        address,
-        city,
-        state,
-        pincode,
-        establishmentYear,
-        totalCows: Number(totalCows),
-        capacity: Number(capacity),
-        contactPerson,
-        contactDetails: JSON.stringify({ phone, email }),
-        description: description || null,
-        photo: result? result.secure_url : existing.photo
-      }
+        name: name || existing.name,
+        address: address || existing.address,
+        city: city || existing.city,
+        state: state || existing.state,
+        pincode: pincode || existing.pincode,
+        establishmentYear:establishmentYear,
+        totalCows: totalCows ? Number(totalCows) : existing.totalCows,
+        capacity: capacity ? Number(capacity) : existing.capacity,
+        contactPerson: contactPerson || existing.contactPerson,
+        contactDetails: JSON.stringify({
+          phone: phone || JSON.parse(existing.contactDetails)?.phone || "",
+          email: email || JSON.parse(existing.contactDetails)?.email || "",
+        }),
+        description: description || existing.description,
+        photo: photoUrl,
+      },
     });
 
-    res.status(200).json({ success: true, message: 'Gau Shala updated', data: parseContactDetails(updatedGaushala) });
+    return res.status(200).json({
+      success: true,
+      message: "Gaushala updated successfully",
+      data: parseContactDetails(updatedGaushala),
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Error updating Gau Shala', error: err.message });
+    console.error("Error updating Gaushala:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update Gaushala",
+      error: err.message,
+    });
   }
 };
 

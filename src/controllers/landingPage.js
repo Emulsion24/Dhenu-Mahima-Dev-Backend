@@ -71,7 +71,7 @@ export const getFoundations = async (req, res) => {
         name: true,
         logoUrl: true,
       },
-      orderBy: { id: "asc" },
+      orderBy: { order: "asc" },
     });
 
     await redisClient.setEx(cacheKey, 1800, JSON.stringify({ foundations })); // 30 mins cache
