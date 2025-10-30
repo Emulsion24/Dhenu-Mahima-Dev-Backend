@@ -176,11 +176,15 @@ export const createFoundation = async (req, res) => {
     const parsedActivities = activities ? JSON.parse(activities) : [];
     const parsedObjectives = objectives ? JSON.parse(objectives) : [];
     const parsedContact = contact ? JSON.parse(contact) : null;
-
+  const maxOrderObj = await prisma.foundation.aggregate({
+      _max: { order: true },
+    });
+        const nextOrder = (maxOrderObj._max.order || 0) + 1;
     const foundation = await prisma.foundation.create({
       data: {
         name,
         tagline,
+        order:nextOrder,
         logoUrl: result.secure_url,
         description,
         establishedYear,
