@@ -226,17 +226,17 @@ model GopalPariwar {
 model Gaushala {
   id             Int      @id @default(autoincrement())
   name           String
-  photo          String?
+ 
   address        String
   establishmentYear String
   contactDetails String
   totalCows      Int
   capacity       Int
   description    String?
-  city           String
-  state          String
-  pincode        String
-  contactPerson  String
+ 
+ 
+
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
