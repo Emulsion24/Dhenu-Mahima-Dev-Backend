@@ -107,25 +107,18 @@ async function initiateOneTimePayment(req, res) {
       city,
       state,
       pincode,
-      membershipType,
-      amount,
-      vpaAddress,
+      
+    
     } = req.body;
-
-    if (!name || !email || !phone || !amount || !vpaAddress) {
+const amount=11000;
+    if (!name || !email || !phone ) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: name, email, phone, amount, vpaAddress',
+        message: 'Missing required fields: name, email, phone',
       });
     }
 
-    const vpaRegex = /^[\w.-]+@[\w.-]+$/;
-    if (!vpaRegex.test(vpaAddress)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid UPI ID format',
-      });
-    }
+  
 
     const { merchantTransactionId, merchantUserId } = generateMerchantIds();
     const amountInPaise = Math.round(amount * 100);
@@ -318,7 +311,7 @@ async function validateUpiVpa(req, res) {
         },
       }
     );
-console.log(authToken.token)
+
     return res.status(200).json({
       success: true,
       data: {
@@ -349,25 +342,26 @@ async function createSubscriptionSetup(req, res) {
       address,
       city,
       state,
+      vpa,
       pincode,
       membershipType,
-      amount, // First debit amount for TRANSACTION, 200 paise for PENNY_DROP
-      maxAmount, // Maximum amount that can be debited
+   // First debit amount for TRANSACTION, 200 paise for PENNY_DROP
+      // Maximum amount that can be debited
       authWorkflowType = 'TRANSACTION', // TRANSACTION or PENNY_DROP
       amountType = 'FIXED', // FIXED or VARIABLE
       frequency = 'YEARLY', // DAILY, WEEKLY, MONTHLY, YEARLY, QUARTERLY, etc.
       recurringCount = 10, // Number of cycles (30 years = expiry)
-      paymentMode, // { type: 'UPI_INTENT', targetApp: 'com.phonepe.app' } or { type: 'UPI_COLLECT', details: { type: 'VPA', vpa: 'user@ybl' }}
+      paymentMode, // { type: 'UPI_INTENT', targetApp: 'com.phonepe.app' } or 
 
     } = req.body;
 
-    if (!name || !email || !phone || !amount || !maxAmount || !paymentMode) {
+    if (!name || !email || !phone || !vpa ) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: name, email, phone, amount, maxAmount, paymentMode',
       });
     }
-
+    const amount=1100;
     // Validation based on authWorkflowType
     if (authWorkflowType === 'PENNY_DROP' && amount !== 200) {
       return res.status(400).json({
@@ -385,13 +379,13 @@ async function createSubscriptionSetup(req, res) {
 
     const { merchantSubscriptionId, merchantOrderId, merchantUserId } = generateMerchantIds();
     const amountInPaise = Math.round(parseInt(amount));
-    const maxAmountInPaise = Math.round(parseInt(maxAmount));
+    
 
     const authToken = await generateAuthToken();
 
     // Calculate subscription expiry (30 years from now by default)
     const subscriptionExpiry = Date.now() + (30 * 365 * 24 * 60 * 60 * 1000);
-    const orderExpiry = Date.now() + (10 * 60 * 1000); // 10 minutes
+    const orderExpiry = Date.now() + (5 * 60 * 1000); // 5 minutes
 
     const subscriptionPayload = {
       merchantOrderId: merchantOrderId,
@@ -402,14 +396,12 @@ async function createSubscriptionSetup(req, res) {
         merchantSubscriptionId: merchantSubscriptionId,
         authWorkflowType: authWorkflowType,
         amountType: amountType,
-        maxAmount: maxAmountInPaise,
+        maxAmount: amountInPaise,
         frequency: frequency,
         expireAt: subscriptionExpiry,
-        paymentMode: paymentMode,
+        paymentMode: { type: 'UPI_COLLECT', details: { type: 'VPA', vpa: vpa }}
       },
-      deviceContext: {
-        deviceOS: deviceOS,
-      },
+     
     };
 
     console.log('Subscription Setup Payload:', JSON.stringify(subscriptionPayload, null, 2));
@@ -455,7 +447,7 @@ async function createSubscriptionSetup(req, res) {
           authToken: authToken,
           merchantUserId: userId ? userId.toString() : merchantUserId,
           paymentMode: paymentMode,
-          maxAmount: maxAmountInPaise,
+          maxAmount: amountInPaise,
         }),
       },
     });
