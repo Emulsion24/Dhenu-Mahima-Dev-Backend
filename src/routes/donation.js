@@ -6,8 +6,8 @@ const router = express.Router();
 
 
 router.post("/create-order", optionalAuth, createDonation);
-router.get("/",verifyToken,requireRole("admin"),getAllDonations);
-router.get("/stats",verifyToken,requireRole("admin"),getDonationStats);
+router.get("/",verifyToken,requireRole(["admin", "subadmin"]),getAllDonations);
+router.get("/stats",verifyToken,requireRole(["admin", "subadmin"]),getDonationStats);
 
 router.post("/webhook", phonePeWebhook);
 

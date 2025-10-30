@@ -22,6 +22,6 @@ router.post('/reset-password', resetPassword);
 router.get('/check-auth',checkAuth);
 
 
-router.get('/admin', verifyToken, requireRole("admin"), (req, res) => res.json({ message: 'Welcome Admin' }));
+router.get('/admin', verifyToken, requireRole(["admin", "subadmin"]), (req, res) => res.json({ message: 'Welcome Admin' }));
 
 export default router;

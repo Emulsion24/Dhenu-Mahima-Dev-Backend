@@ -20,8 +20,8 @@ router.get('/', getAllGopal);
 router.get('/:id', getGopalById);
 
 // Protected routes - Require authentication and admin role
-router.post('/create',uploadImage.single("photo"), verifyToken, requireRole("admin"), createGopal);
-router.put('/update/:id',uploadImage.single("photo"), verifyToken, requireRole("admin"), updateGopal);
+router.post('/create',uploadImage.single("photo"), verifyToken, requireRole(["admin", "subadmin"]), createGopal);
+router.put('/update/:id',uploadImage.single("photo"), verifyToken, requireRole(["admin", "subadmin"]), updateGopal);
 router.delete('/delete/:id', verifyToken, requireRole("admin"), deleteGopal);
 
 export default router;

@@ -21,12 +21,12 @@ router.get("/search",searchBhajans);
 router.get('/', getAllBhajans);
 router.get('/latest',getLatestBhajans);
 router.get('/:id', getBhajanById);
-router.post('/',verifyToken,requireRole("admin"),upload.fields([
+router.post('/',verifyToken,requireRole(["admin", "subadmin"]),upload.fields([
     { name: 'audio', maxCount: 1 },
     { name: 'image', maxCount: 1 },
   ]),createBhajan);
 
-router.put( '/:id',verifyToken,requireRole("admin"),upload.fields([
+router.put( '/:id',verifyToken,requireRole(["admin", "subadmin"]),upload.fields([
     { name: 'audio', maxCount: 1 },
     { name: 'image', maxCount: 1 },
   ]),updateBhajan);
@@ -35,7 +35,7 @@ router.delete('/:id', verifyToken,requireRole("admin"),deleteBhajan);
 
 // 📌 Streaming & Download
 router.get('/audio/stream/:filename', streamAudio);
-router.get('/audio/download/:filename',verifyToken,requireRole("admin"), downloadAudio);
+router.get('/audio/download/:filename',verifyToken,requireRole(["admin", "subadmin"]), downloadAudio);
 
 
 

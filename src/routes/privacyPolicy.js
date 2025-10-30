@@ -12,7 +12,7 @@ const router = express.Router();
 router.get("/", getPolicy);
 
 // Create new privacy policy
-router.post("/", verifyToken,requireRole("admin"),savePolicy);
+router.post("/", verifyToken,requireRole(["admin", "subadmin"]),savePolicy);
 
 
 

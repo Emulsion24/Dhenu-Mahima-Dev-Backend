@@ -14,14 +14,19 @@ export function verifyToken(req, res, next) {
   }
 }
 
-export function requireRole(role) {
+export function requireRole(roles) {
   return (req, res, next) => {
-    if (req.user.role !== role) {
+    // If roles is a single string (e.g. "admin"), convert to array
+    const allowedRoles = Array.isArray(roles) ? roles : [roles];
+
+    if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ message: "Forbidden" });
     }
+
     next();
   };
 }
+
 export const optionalAuth = (req, res, next) => {
   const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
 

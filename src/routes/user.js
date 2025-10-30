@@ -16,7 +16,7 @@ const router = express.Router();
 
 
 // GET all users with pagination and search
-router.get("/users",verifyToken,requireRole("admin"), getUsers);
+router.get("/users",verifyToken,requireRole(["admin", "subadmin"]), getUsers);
 
 // GET single user by ID
 router.get("/users/:id",verifyToken,requireRole("admin"), getUserById);

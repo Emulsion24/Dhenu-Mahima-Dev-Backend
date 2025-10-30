@@ -19,18 +19,18 @@ router.get('/', getAllBooks);
 router.get('/:id', getBookById);
 
 // Protected routes - Admin only
-router.post('/', verifyToken, requireRole('admin', 'subadmin'), upload.fields([
+router.post('/', verifyToken, requireRole(['admin', 'subadmin']), upload.fields([
   { name: "pdf", maxCount: 1 },
   { name: "image", maxCount: 1 }
 ]), createBook);
-router.put('/:id', verifyToken, requireRole('admin', 'subadmin'), upload.fields([
+router.put('/:id', verifyToken, requireRole(['admin', 'subadmin']), upload.fields([
   { name: "pdf", maxCount: 1 },
   { name: "image", maxCount: 1 }
 ]), updateBook);
-router.delete('/:id', verifyToken, requireRole('admin', 'subadmin'), deleteBook);
+router.delete('/:id', verifyToken, requireRole(['admin', 'subadmin']), deleteBook);
 
 // Protected route - Stream PDF (only for purchased users)
 router.get('/:id/stream', verifyToken, requireRole('user'), streamPdf);
-router.get('/pdf/download/:filename',verifyToken,requireRole("admin"),downloadPdf);
+router.get('/pdf/download/:filename',verifyToken,requireRole(['admin', 'subadmin']),downloadPdf);
 
 export default router;

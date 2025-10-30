@@ -6,17 +6,17 @@ import { addCard, deleteCard, editCard, getCards, reorderCards } from "../contro
 
 
 const router=express.Router();
-router.put("/banners/reorder",verifyToken,requireRole("admin"),reorderBanners);
-router.post("/banners/upload",verifyToken, requireRole("admin"), uploadImage.single("file"),uploadBanner);
+router.put("/banners/reorder",verifyToken,requireRole(["admin", "subadmin"]),reorderBanners);
+router.post("/banners/upload",verifyToken, requireRole(["admin", "subadmin"]), uploadImage.single("file"),uploadBanner);
 
-router.post("/message/upload",verifyToken, requireRole("admin"), addDirectorMessage);
+router.post("/message/upload",verifyToken, requireRole(["admin", "subadmin"]), addDirectorMessage);
 router.delete("/delete-message/:id", verifyToken, requireRole("admin"),deleteDirectorMessage);
 router.delete("/delete-banner/:id", verifyToken, requireRole("admin"),deleteBanner);
-router.get("/message",verifyToken, requireRole("admin"), getDirectorMessage);
-router.get("/cards",verifyToken, requireRole("admin"), getCards);
-router.post("/add-card",verifyToken,requireRole("admin"),addCard);
+router.get("/message",verifyToken, requireRole(["admin", "subadmin"]), getDirectorMessage);
+router.get("/cards",verifyToken, requireRole(["admin", "subadmin"]), getCards);
+router.post("/add-card",verifyToken,requireRole(["admin", "subadmin"]),addCard);
 router.delete("/delete-card/:id",verifyToken,requireRole("admin"),deleteCard);
-router.put("/cards/reorder",verifyToken,requireRole("admin"),reorderCards);
-router.put("/edit-card/:id",verifyToken,requireRole("admin"),editCard);
-router.get('/admin', verifyToken, requireRole("admin"), (req, res) => res.json({ message: 'Welcome Admin' }));
+router.put("/cards/reorder",verifyToken,requireRole(["admin", "subadmin"]),reorderCards);
+router.put("/edit-card/:id",verifyToken,requireRole(["admin", "subadmin"]),editCard);
+router.get('/admin', verifyToken, requireRole(["admin", "subadmin"]), (req, res) => res.json({ message: 'Welcome Admin' }));
  export default router;

@@ -31,8 +31,8 @@ router.get('/categories', getCategories);
 router.get('/:id', getNewsById);
 router.get('/slug/:slug', getNewsBySlug);
 router.get('/related/:id', getRelatedNews);
-router.post('/',verifyToken,requireRole("admin"),upload.single('image'), newsValidation, createNews);
-router.put('/:id',verifyToken,requireRole("admin"), upload.single('image'), updateNews);
+router.post('/',verifyToken,requireRole(["admin", "subadmin"]),upload.single('image'), newsValidation, createNews);
+router.put('/:id',verifyToken,requireRole(["admin", "subadmin"]), upload.single('image'), updateNews);
 router.delete('/:id', verifyToken,requireRole("admin"),deleteNews);
 
 export default router;

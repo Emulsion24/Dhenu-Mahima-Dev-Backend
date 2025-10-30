@@ -7,8 +7,8 @@ const router = express.Router();
 
 router.get('/',getAllEvents);
 router.get('/:id',getEventById);
-router.post('/',verifyToken,requireRole("admin"),createEvent);
-router.put('/:id',verifyToken,requireRole("admin"),updateEvent);
+router.post('/',verifyToken,requireRole(["admin", "subadmin"]),createEvent);
+router.put('/:id',verifyToken,requireRole(["admin", "subadmin"]),updateEvent);
 router.delete('/:id', verifyToken,requireRole("admin"),deleteEvent);
-router.get('/cleanup',verifyToken,requireRole("admin"),cleanupExpiredEvents);
+router.get('/cleanup',verifyToken,requireRole(["admin", "subadmin"]),cleanupExpiredEvents);
 export default router;

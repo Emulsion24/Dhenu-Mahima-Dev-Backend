@@ -10,8 +10,8 @@ router.get('/search',searchGaushalas);
 
 router.get('/',getAllGaushalas);
 router.get('/:id',getGaushalaById);
-router.post('/',uploadImage.single("photo"),verifyToken,requireRole("admin"),createGaushala );
-router.put('/:id',uploadImage.single("photo"),verifyToken,requireRole("admin"),updateGaushala);
-router.delete('/:id', deleteGaushala);
+router.post('/',uploadImage.single("photo"),verifyToken,requireRole(["admin", "subadmin"]),createGaushala );
+router.put('/:id',uploadImage.single("photo"),verifyToken,requireRole(["admin", "subadmin"]),updateGaushala);
+router.delete('/:id', verifyToken,requireRole("admin"),deleteGaushala);
 
 export default router;

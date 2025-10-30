@@ -8,8 +8,8 @@ const router = express.Router();
 
 router.get('/',getAllSansthans);
 router.get('/:id',getSansthanById);
-router.post('/',uploadImage.single("photo"),verifyToken,requireRole("admin"),createSansthan);
-router.put('/:id',uploadImage.single("photo"),verifyToken,requireRole("admin"),updateSansthan);
-router.delete('/:id', deleteSansthan);
+router.post('/',uploadImage.single("photo"),verifyToken,requireRole(["admin", "subadmin"]),createSansthan);
+router.put('/:id',uploadImage.single("photo"),verifyToken,requireRole(["admin", "subadmin"]),updateSansthan);
+router.delete('/:id',verifyToken,requireRole("admin"), deleteSansthan);
 
 export default router;
