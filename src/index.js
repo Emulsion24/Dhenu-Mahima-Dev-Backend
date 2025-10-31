@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { setupSubscriptionCronJobs } from './cron/subscriptionCron.js';
 
 // Import routes
 import authRoutes from "./routes/auth.js";
@@ -47,6 +48,7 @@ const corsOptions = {
     const allowedOrigins = [
 
       `${FRONTEND_URL}`,
+  
     
       
     ];
@@ -239,7 +241,7 @@ app.listen(PORT, () => {
   console.log(FRONTEND_URL);
   
 });
-
+setupSubscriptionCronJobs();
 // ========================================
 // ✅ GRACEFUL SHUTDOWN
 // ========================================

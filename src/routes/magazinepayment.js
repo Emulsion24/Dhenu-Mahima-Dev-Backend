@@ -1,6 +1,6 @@
 import express from "express";
 import { verifyToken, requireRole, optionalAuth } from "../middleware/authMiddleware.js";
-import { checkPaymentStatus, createSubscriptionSetup, getSubscriptionOrderStatus, handleWebhook, initiateOneTimePayment, validateUpiVpa } from "../controllers/magazinePaymentController.js";
+import { cancelSubscription, checkPaymentStatus, createSubscriptionSetup, deleteSubscription, getAllPayments, getSubscriptionOrderStatus,  initiateOneTimePayment, validateUpiVpa } from "../controllers/magazinePaymentController.js";
 
 
 
@@ -12,8 +12,9 @@ router.post("/create-order-onetime",optionalAuth,initiateOneTimePayment);
 
 router.post("/order-status/:merchantOrderId",optionalAuth,getSubscriptionOrderStatus);
 router.get("/order-status-onetime",optionalAuth,checkPaymentStatus);
-router.post("/webhook",express.json(),handleWebhook);
-
+router.patch("/:id",verifyToken,requireRole(['admin','subadmin']),cancelSubscription);
+router.get("/",verifyToken,requireRole(['admin','subadmin']),getAllPayments);
+router.delete("/delete/:id",verifyToken,requireRole('admin'),deleteSubscription);
 
 router.post("/validate-vpa",optionalAuth,validateUpiVpa);
 

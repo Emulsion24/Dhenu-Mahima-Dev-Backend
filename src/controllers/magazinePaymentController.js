@@ -144,8 +144,8 @@ const amount=11000;
         city: city || '',
         state: state || '',
         pincode: pincode || '',
-        membershipType:'Life Time',
-        amount: amountInPaise,
+        membershipType:'lifetime',
+        amount: amount,
         status: 'pending',
         transactionId: merchantTransactionId,
         orderId: merchantTransactionId,
@@ -191,7 +191,7 @@ const merchantTransactionId=orderId;
      let status = "pending";
     try {
       const orderStatusResponse = await phonePe.getOrderStatus(merchantTransactionId);
-      if (orderStatusResponse?.state === "COMPLETED") status = "success";
+      if (orderStatusResponse?.state === "COMPLETED") status = "active";
       else if (orderStatusResponse?.state === "FAILED") status = "failed";
     } catch (err) {
       console.error("Error fetching PhonePe order status:", err.message);
@@ -209,7 +209,7 @@ const merchantTransactionId=orderId;
         where: { referenceId: merchantTransactionId },
         data: { status },
       });
-      if (status === "success" && updatedMembership.email) {
+      if (status === "active" && updatedMembership.email) {
               await sendMembershipThankYouEmail({
               name: updatedMembership.name,
               email: updatedMembership.email,
@@ -218,7 +218,7 @@ const merchantTransactionId=orderId;
               membershipType:updatedMembership.membershipType,
           });}
       return res.redirect(
-      `${process.env.FRONTEND_URL}/magazine-status?status=${status}&txn=${merchantTransactionId}&amount=${updatedMembership.amount}`
+      `${process.env.FRONTEND_URL}/magazine-status?status=${updatedMembership.status}&txn=${merchantTransactionId}&amount=${updatedMembership.amount}`
     );
   } catch (err) {
     console.error("Magazine Payment Callback Error:", err.message);
@@ -368,7 +368,7 @@ const paymentMode={ type: 'UPI_COLLECT', details: { type: 'VPA', vpa: vpa }};
         state: state || '',
         pincode: pincode || '',
         membershipType: membershipType,
-        amount: amountInPaise,
+        amount: amount,
         status: 'pending',
         transactionId: merchantOrderId,
         orderId: response.data.orderId || merchantOrderId,
@@ -395,7 +395,7 @@ const paymentMode={ type: 'UPI_COLLECT', details: { type: 'VPA', vpa: vpa }};
         userId: userId || null,
         referenceId: merchantSubscriptionId,
         provider: 'PHONEPE',
-        amount: amount / 100,
+        amount: amount,
         status: 'pending',
         type: 'subscription_setup',
         metadata: JSON.stringify({ membershipPaymentId: membership.id }),
@@ -430,74 +430,97 @@ const paymentMode={ type: 'UPI_COLLECT', details: { type: 'VPA', vpa: vpa }};
 async function getSubscriptionOrderStatus(req, res) {
   try {
     const { merchantOrderId } = req.params;
-
     const authToken = await generateAuthToken();
 
     const response = await axios.get(
       `${getBaseUrl()}/subscriptions/v2/order/${merchantOrderId}/status?details=true`,
       {
         headers: {
-          'Authorization': `${authToken.tokenType} ${authToken.token}`,
+          Authorization: `${authToken.tokenType} ${authToken.token}`,
         },
       }
     );
 
     const membership = await prisma.membershipPayment.findFirst({
-      where: { merchantOrderId: merchantOrderId },
+      where: { merchantOrderId },
     });
 
     if (membership) {
+      const prevStatus = membership.status; // save old status
+
       const updateData = {
-        subscriptionState: response.data.state,
-        status: response.data.state === 'COMPLETED' ? 'active' : 
-                response.data.state === 'FAILED' ? 'failed' : 
-                'pending',
+       
+        status:
+          response.data.state === "COMPLETED"
+            ? "active"
+            : response.data.state === "FAILED"
+            ? "failed"
+            : "pending",
         orderId: response.data.orderId,
+         subscriptionState:  response.data.state === "COMPLETED"
+            ? "ACTIVE"
+            : response.data.state === "FAILED"
+            ? "FAILED"
+            : "PENDING",
       };
 
       if (response.data.paymentFlow?.subscriptionId) {
-        updateData.phonePeSubscriptionId = response.data.paymentFlow.subscriptionId;
+        updateData.phonePeSubscriptionId =
+          response.data.paymentFlow.subscriptionId;
       }
 
-      if (response.data.paymentDetails && response.data.paymentDetails.length > 0) {
+      if (
+        response.data.paymentDetails &&
+        response.data.paymentDetails.length > 0
+      ) {
         const paymentDetail = response.data.paymentDetails[0];
         updateData.providerReferenceId = paymentDetail.transactionId;
-        
+
         if (paymentDetail.errorCode) {
           updateData.payResponseCode = paymentDetail.errorCode;
         }
       }
 
-      if (response.data.state === 'COMPLETED') {
+      // Handle completed subscription (only first time)
+      if (response.data.state === "COMPLETED") {
         updateData.subscriptionStartDate = new Date();
-        
-        // Calculate next billing date based on frequency
         const nextBilling = new Date();
-       nextBilling.setFullYear(nextBilling.getFullYear() + 1);
-       updateData.nextBillingDate = nextBilling;
+        nextBilling.setFullYear(nextBilling.getFullYear() + 1);
+        updateData.nextBillingDate = nextBilling;
       }
 
-    const updatedMembership=  await prisma.membershipPayment.update({
+      const updatedMembership = await prisma.membershipPayment.update({
         where: { id: membership.id },
         data: updateData,
       });
- if (response.data.state  === "COMPLETED" && updatedMembership.email) {
-              await sendMembershipThankYouEmail({
-              name: updatedMembership.name,
-              email: updatedMembership.email,
-              amount: updatedMembership.amount,
-              transactionId: updatedMembership.transactionId ,
-              membershipType:updatedMembership.membershipType,
-          });}
-      // Update payment record
+
+      // Update related payment record
       await prisma.payment.updateMany({
         where: { referenceId: membership.merchantSubscriptionId },
         data: {
-          status: response.data.state === 'COMPLETED' ? 'success' : 
-                  response.data.state === 'FAILED' ? 'failed' : 
-                  'pending',
+          status:
+            response.data.state === "COMPLETED"
+              ? "success"
+              : response.data.state === "FAILED"
+              ? "failed"
+              : "pending",
         },
       });
+
+      // ✅ Send thank-you email only once
+      if (
+        response.data.state === "COMPLETED" &&
+        prevStatus !== "active" && // only if it was not already active
+        updatedMembership.email
+      ) {
+        await sendMembershipThankYouEmail({
+          name: updatedMembership.name,
+          email: updatedMembership.email,
+          amount: updatedMembership.amount,
+          transactionId: updatedMembership.transactionId,
+          membershipType: updatedMembership.membershipType,
+        });
+      }
     }
 
     return res.status(200).json({
@@ -505,18 +528,19 @@ async function getSubscriptionOrderStatus(req, res) {
       data: response.data,
     });
   } catch (error) {
-    console.error('Error checking subscription order status:', error.response?.data || error.message);
+    console.error(
+      "Error checking subscription order status:",
+      error.response?.data || error.message
+    );
     return res.status(500).json({
       success: false,
-      message: 'Failed to check subscription order status',
+      message: "Failed to check subscription order status",
       error: error.response?.data || error.message,
     });
   }
 }
 
-/**
- * Get Subscription Status by Subscription ID
- */
+
 async function getSubscriptionStatus(req, res) {
   try {
     const { merchantSubscriptionId } = req.params;
@@ -568,9 +592,6 @@ async function getSubscriptionStatus(req, res) {
 
 // ==================== RECURRING PAYMENT (REDEMPTION) ====================
 
-/**
- * Notify Customer for Recurring Payment
- */
 async function notifyRedemption(req, res) {
   try {
     const { membershipPaymentId, amount, redemptionRetryStrategy = 'STANDARD', autoDebit = false } = req.body;
@@ -658,9 +679,8 @@ async function notifyRedemption(req, res) {
   }
 }
 
-/**
- * Execute Recurring Payment (Redemption)
- */
+
+
 async function executeRedemption(req, res) {
   try {
     const { recurringPaymentId } = req.body;
@@ -724,9 +744,6 @@ async function executeRedemption(req, res) {
   }
 }
 
-/**
- * Get Recurring Payment Status
- */
 async function getRedemptionOrderStatus(req, res) {
   try {
     const { merchantOrderId } = req.params;
@@ -846,341 +863,211 @@ async function getRedemptionOrderStatus(req, res) {
 
 // ==================== SUBSCRIPTION MANAGEMENT ====================
 
-/**
- * Cancel Subscription
- */
 async function cancelSubscription(req, res) {
   try {
-    const { merchantSubscriptionId } = req.params;
+    const { id } = req.params; // membershipPayment ID from frontend
 
+    // 1️⃣ Find the membership payment record
+    const membership = await prisma.membershipPayment.findUnique({
+      where: { id: id },
+    });
+
+    if (!membership) {
+      return res.status(404).json({
+        success: false,
+        message: "Membership payment not found",
+      });
+    }
+
+    if (!membership.merchantSubscriptionId) {
+      return res.status(400).json({
+        success: false,
+        message: "No associated merchant subscription ID found for this membership",
+      });
+    }
+
+    // 2️⃣ Generate PhonePe auth token
     const authToken = await generateAuthToken();
 
+    // 3️⃣ Call PhonePe cancel API
     const response = await axios.post(
-      `${getBaseUrl()}/subscriptions/v2/${merchantSubscriptionId}/cancel`,
+      `${getBaseUrl()}/subscriptions/v2/${membership.merchantSubscriptionId}/cancel`,
       {},
       {
         headers: {
-          'Authorization': `${authToken.tokenType} ${authToken.token}`,
+          Authorization: `${authToken.tokenType} ${authToken.token}`,
         },
       }
     );
 
-    await prisma.membershipPayment.updateMany({
-      where: { merchantSubscriptionId: merchantSubscriptionId },
+    // 4️⃣ Update membership record in DB
+    const updatedMembership = await prisma.membershipPayment.update({
+      where: { id: membership.id }, // ✅ FIXED here
       data: {
-        subscriptionState: 'CANCELLED',
-        status: 'cancelled',
+        subscriptionState: "CANCELLED",
+        status: "cancelled",
       },
+    });
+
+    // 5️⃣ Optional: Update payment table
+    await prisma.payment.updateMany({
+      where: { referenceId: membership.merchantSubscriptionId },
+      data: { status: "cancelled" },
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Subscription cancelled successfully',
-      data: response.data,
+      message: "Subscription cancelled successfully",
+      data: {
+        phonePeResponse: response.data,
+        updatedMembership,
+      },
     });
   } catch (error) {
-    console.error('Error cancelling subscription:', error.response?.data || error.message);
+    console.error("Error cancelling subscription:", error.response?.data || error.message);
     return res.status(500).json({
       success: false,
-      message: 'Failed to cancel subscription',
+      message: "Failed to cancel subscription",
       error: error.response?.data || error.message,
     });
   }
 }
 
-// ==================== WEBHOOKS / CALLBACKS ====================
 
-/**
- * Handle PhonePe Webhook Callback
- */
-async function handleWebhook(req, res) {
-  try {
-    const { event, payload } = req.body;
-   console.log('PhonePe Webhook Event:', event);
-    // Validate webhook authentication (if configured)
-    const authHeader = req.headers['authorization'];
-    if (process.env.PHONEPE_WEBHOOK_USERNAME && process.env.PHONEPE_WEBHOOK_PASSWORD) {
-      const expectedAuth = crypto
-        .createHash('sha256')
-        .update(`${process.env.PHONEPE_WEBHOOK_USERNAME}:${process.env.PHONEPE_WEBHOOK_PASSWORD}`)
-        .digest('hex');
-      
-      if (authHeader !== expectedAuth) {
-        console.error('Invalid webhook authentication');
-        return res.status(401).json({
-          success: false,
-          message: 'Unauthorized',
-        });
-      }
-    }
 
-    console.log('PhonePe Webhook Event: after verification ', event);
-    console.log('PhonePe Webhook Payload:', JSON.stringify(payload, null, 2));
 
-    // Route to appropriate handler based on event type
-    if (event.includes('subscription.setup')) {
-      await handleSubscriptionSetupWebhook(payload);
-    } else if (event.includes('subscription.notification')) {
-      await handleNotificationWebhook(payload);
-    } else if (event.includes('subscription.redemption')) {
-      await handleRedemptionWebhook(payload);
-    } else if (event.includes('subscription.cancelled') || 
-               event.includes('subscription.revoked') ||
-               event.includes('subscription.paused') ||
-               event.includes('subscription.unpaused')) {
-      await handleSubscriptionStateChangeWebhook(payload);
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Webhook processed',
-    });
-  } catch (error) {
-    console.error('Error processing webhook:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error processing webhook',
-    });
-  }
-}
-
-/**
- * Handle Subscription Setup Webhook
- */
-async function handleSubscriptionSetupWebhook(payload) {
-  const { merchantOrderId, state, paymentFlow, paymentDetails } = payload;
-
-  const membership = await prisma.membershipPayment.findFirst({
-    where: { merchantOrderId: merchantOrderId },
-  });
-
-  if (membership) {
-    const updateData = {
-      subscriptionState: state,
-      status: state === 'COMPLETED' ? 'active' : 
-              state === 'FAILED' ? 'failed' : 
-              'pending',
-      callbackData: JSON.stringify(payload),
-    };
-
-    if (paymentFlow?.subscriptionId) {
-      updateData.phonePeSubscriptionId = paymentFlow.subscriptionId;
-    }
-
-    if (paymentDetails && paymentDetails.length > 0) {
-      const paymentDetail = paymentDetails[0];
-      updateData.providerReferenceId = paymentDetail.transactionId;
-      
-      if (paymentDetail.errorCode) {
-        updateData.payResponseCode = paymentDetail.errorCode;
-      }
-    }
-
-    if (state === 'COMPLETED') {
-      updateData.subscriptionStartDate = new Date();
-      
-      const nextBilling = new Date();
-      nextBilling.setFullYear(nextBilling.getFullYear() + 1);
-         
-      
-      updateData.nextBillingDate = nextBilling;
-    }
-
-    await prisma.membershipPayment.update({
-      where: { id: membership.id },
-      data: updateData,
-    });
-
-    // Update payment record
-    await prisma.payment.updateMany({
-      where: { referenceId: membership.merchantSubscriptionId },
-      data: {
-        status: state === 'COMPLETED' ? 'success' : 
-                state === 'FAILED' ? 'failed' : 
-                'pending',
-      },
-    });
-  }
-}
-
-/**
- * Handle Notification Webhook
- */
-async function handleNotificationWebhook(payload) {
-  const { merchantOrderId, state } = payload;
-
-  const recurringPayment = await prisma.recurringPayment.findFirst({
-    where: { merchantOrderId: merchantOrderId },
-  });
-
-  if (recurringPayment) {
-    await prisma.recurringPayment.update({
-      where: { id: recurringPayment.id },
-      data: {
-        state: state,
-        callbackData: JSON.stringify(payload),
-      },
-    });
-  }
-}
-
-/**
- * Handle Redemption Webhook
- */
-async function handleRedemptionWebhook(payload) {
-  const { merchantOrderId, state, paymentDetails } = payload;
-
-  const recurringPayment = await prisma.recurringPayment.findFirst({
-    where: { merchantOrderId: merchantOrderId },
-  });
-
-  if (recurringPayment) {
-    const updateData = {
-      state: state,
-      status: state === 'COMPLETED' ? 'SUCCESS' : 
-              state === 'FAILED' ? 'FAILED' : 
-              'PENDING',
-      callbackData: JSON.stringify(payload),
-    };
-
-    if (paymentDetails && paymentDetails.length > 0) {
-      const paymentDetail = paymentDetails[0];
-      updateData.providerReferenceId = paymentDetail.transactionId;
-      
-      if (paymentDetail.errorCode) {
-        updateData.payResponseCode = paymentDetail.errorCode;
-      }
-    }
-
-    if (state === 'COMPLETED') {
-      updateData.completedAt = new Date();
-    }
-
-    await prisma.recurringPayment.update({
-      where: { id: recurringPayment.id },
-      data: updateData,
-    });
-
-    // Create payment record and update next billing date for successful payment
-    if (state === 'COMPLETED') {
-      const membership = await prisma.membershipPayment.findUnique({
-        where: { id: recurringPayment.membershipPaymentId },
-      });
-
-      if (membership) {
-        // Create payment record
-        await prisma.payment.create({
-          data: {
-            userId: membership.userId || null,
-            referenceId: merchantOrderId,
-            provider: 'PHONEPE',
-            amount: recurringPayment.amount / 100,
-            status: 'success',
-            type: 'recurring_payment',
-            metadata: JSON.stringify({ recurringPaymentId: recurringPayment.id }),
-          },
-        });
-
-        // Update next billing date
-        const nextBilling = new Date(membership.nextBillingDate);
-        switch (membership.subscriptionFrequency) {
-          case 'DAILY':
-            nextBilling.setDate(nextBilling.getDate() + 1);
-            break;
-          case 'WEEKLY':
-            nextBilling.setDate(nextBilling.getDate() + 7);
-            break;
-          case 'FORTNIGHTLY':
-            nextBilling.setDate(nextBilling.getDate() + 14);
-            break;
-          case 'MONTHLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 1);
-            break;
-          case 'BIMONTHLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 2);
-            break;
-          case 'QUARTERLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 3);
-            break;
-          case 'HALFYEARLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 6);
-            break;
-          case 'YEARLY':
-            nextBilling.setFullYear(nextBilling.getFullYear() + 1);
-            break;
-        }
-
-        await prisma.membershipPayment.update({
-          where: { id: membership.id },
-          data: { nextBillingDate: nextBilling },
-        });
-      }
-    }
-  }
-}
-
-/**
- * Handle Subscription State Change Webhook
- */
-async function handleSubscriptionStateChangeWebhook(payload) {
-  const { merchantSubscriptionId, state } = payload;
-
-  await prisma.membershipPayment.updateMany({
-    where: { merchantSubscriptionId: merchantSubscriptionId },
-    data: {
-      subscriptionState: state,
-      status: state === 'ACTIVE' ? 'active' : 
-              state === 'CANCELLED' ? 'cancelled' : 
-              state === 'REVOKED' ? 'revoked' :
-              state === 'PAUSED' ? 'paused' :
-              'pending',
-      callbackData: JSON.stringify(payload),
-    },
-  });
-}
-
-// ==================== HELPER FUNCTIONS ====================
-
-/**
- * Get all payments/subscriptions
- */
 async function getAllPayments(req, res) {
   try {
-    const { userId, email, phone } = req.query;
+    const { name, status, email, membershipType, page = 1, limit = 10 } = req.query;
 
-    const whereClause = {};
-    
-    if (userId) {
-      whereClause.userId = parseInt(userId);
-    }
-    if (email) {
-      whereClause.email = email;
-    }
-    if (phone) {
-      whereClause.phone = phone;
+    const whereClause = {
+      AND: [],
+    };
+
+    // Search by name OR email (MySQL is case-insensitive by default for LIKE)
+    if (name || email) {
+      const searchTerm = name || email;
+      whereClause.AND.push({
+        OR: [
+          {
+            name: {
+              contains: searchTerm,
+              // No mode needed for MySQL - it's case-insensitive by default
+            },
+          },
+          {
+            email: {
+              contains: searchTerm,
+              // No mode needed for MySQL
+            },
+          },
+        ],
+      });
     }
 
+    // Filter by status
+    if (status) {
+      whereClause.AND.push({
+        status: {
+          equals: status,
+        },
+      });
+    }
+
+    // Filter by membership type
+    if (membershipType) {
+      whereClause.AND.push({
+        membershipType: {
+          equals: membershipType,
+        },
+      });
+    }
+
+    // Pagination
+    const pageNumber = parseInt(page);
+    const pageSize = parseInt(limit);
+    const skip = (pageNumber - 1) * pageSize;
+
+    // Build the final where clause
+    const finalWhereClause = whereClause.AND.length ? whereClause : undefined;
+
+    // Total count
+    const totalRecords = await prisma.membershipPayment.count({
+      where: finalWhereClause,
+    });
+
+    // Paginated data
     const payments = await prisma.membershipPayment.findMany({
-      where: whereClause,
-      orderBy: { createdAt: 'desc' },
+      where: finalWhereClause,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: pageSize,
     });
 
     return res.status(200).json({
       success: true,
       data: payments,
+      pagination: {
+        totalRecords,
+        currentPage: pageNumber,
+        totalPages: Math.ceil(totalRecords / pageSize),
+        pageSize,
+      },
     });
   } catch (error) {
-    console.error('Error fetching payments:', error);
+    console.error("Error fetching payments:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch payments',
+      message: "Failed to fetch payments",
+      error: error.message,
     });
   }
 }
 
-/**
- * Get recurring payments for a subscription
- */
+async function deleteSubscription(req, res) {
+  try {
+    const { id } = req.params; // membershipPayment ID from frontend
+
+    // Check if the membership exists
+    const membership = await prisma.membershipPayment.findUnique({
+      where: { id: id },
+    });
+
+    if (!membership) {
+      return res.status(404).json({
+        success: false,
+        message: "Membership payment not found",
+      });
+    }
+
+    // Optionally delete related payment records
+    if (membership.merchantSubscriptionId) {
+      await prisma.payment.deleteMany({
+        where: { referenceId: membership.merchantSubscriptionId },
+      });
+    }
+
+    // Delete the membership payment record
+    await prisma.membershipPayment.delete({
+      where: { id: id },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Subscription deleted successfully",
+      deletedId: id,
+    });
+  } catch (error) {
+    console.error("Error deleting subscription:", error.response?.data || error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete subscription",
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
+
 async function getSubscriptionRecurringPayments(req, res) {
   try {
     const { membershipPaymentId } = req.params;
@@ -1203,33 +1090,665 @@ async function getSubscriptionRecurringPayments(req, res) {
   }
 }
 
-// ==================== EXPORTS ====================
+// ==================== Corn Job====================
+
+/**
+ * Automated Cron Job: Check all active subscriptions and update their status
+ */
+/**
+ * Automated Cron Job: Check all active subscriptions and update their status
+ */
+async function checkAllSubscriptionStatuses() {
+  try {
+    console.log('🔄 Starting automated subscription status check...');
+
+    // Get all memberships with active subscriptions (annual only)
+    const activeSubscriptions = await prisma.membershipPayment.findMany({
+      where: {
+        membershipType: 'annual',
+        merchantSubscriptionId: { not: null },
+        subscriptionState: { in: ['ACTIVE', 'PENDING', 'CREATED'] },
+      },
+    });
+
+    console.log(`📊 Found ${activeSubscriptions.length} active annual subscriptions to check`);
+
+    const results = {
+      checked: 0,
+      updated: 0,
+      errors: 0,
+      notifications: [],
+    };
+
+    for (const membership of activeSubscriptions) {
+      try {
+        const authToken = await generateAuthToken();
+
+        // Check subscription status with PhonePe
+        const response = await axios.get(
+          `${getBaseUrl()}/subscriptions/v2/${membership.merchantSubscriptionId}/status?details=true`,
+          {
+            headers: {
+              'Authorization': `${authToken.tokenType} ${authToken.token}`,
+            },
+          }
+        );
+
+        results.checked++;
+
+        // Map PhonePe state to our status
+        const newStatus = response.data.state === 'ACTIVE' ? 'active' : 
+                         response.data.state === 'CANCELLED' ? 'cancelled' : 
+                         response.data.state === 'REVOKED' ? 'cancelled' :
+                         response.data.state === 'EXPIRED' ? 'expired' : 
+                         response.data.state === 'PAUSED' ? 'pending' :
+                         response.data.state === 'COMPLETED' ? 'active' :
+                         'pending';
+
+        if (membership.status !== newStatus || membership.subscriptionState !== response.data.state) {
+          await prisma.membershipPayment.update({
+            where: { id: membership.id },
+            data: {
+              subscriptionState: response.data.state,
+              phonePeSubscriptionId: response.data.subscriptionId || membership.phonePeSubscriptionId,
+              status: newStatus,
+            },
+          });
+          results.updated++;
+          console.log(`✅ Updated subscription ${membership.merchantSubscriptionId}: ${newStatus}`);
+        }
+
+        // Check if billing is due (within 7 days for early warning)
+        if (membership.nextBillingDate && response.data.state === 'ACTIVE') {
+          const daysUntilBilling = Math.ceil(
+            (new Date(membership.nextBillingDate) - new Date()) / (1000 * 60 * 60 * 24)
+          );
+
+          if (daysUntilBilling <= 7 && daysUntilBilling >= 0) {
+            results.notifications.push({
+              membershipId: membership.id,
+              daysUntilBilling,
+              message: `Billing due in ${daysUntilBilling} days`,
+            });
+          }
+        }
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        results.errors++;
+        console.error(`❌ Error checking subscription ${membership.merchantSubscriptionId}:`, error.message);
+      }
+    }
+
+    console.log('✅ Subscription status check completed:', results);
+    return results;
+
+  } catch (error) {
+    console.error('❌ Error in automated subscription check:', error);
+    throw error;
+  }
+}
+
+/**
+ * Automated Cron Job: Notify redemption for annual memberships due for billing
+ * This sends the pre-debit notification 48-72 hours before billing date
+ */
+async function autoNotifyAnnualRedemptions() {
+  try {
+    console.log('🔔 Starting automated redemption notifications (24h+ advance notice)...');
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Notify 2-3 days before billing date (48-72 hours advance notice)
+    const twoDaysFromNow = new Date(today);
+    twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
+    
+    const threeDaysFromNow = new Date(today);
+    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+
+    // Find annual subscriptions due for billing in 2-3 days
+    const dueSubscriptions = await prisma.membershipPayment.findMany({
+      where: {
+        membershipType: 'annual',
+        subscriptionState: 'ACTIVE',
+        status: 'active',
+        nextBillingDate: {
+          gte: twoDaysFromNow,
+          lte: threeDaysFromNow,
+        },
+      },
+    });
+
+    console.log(`📊 Found ${dueSubscriptions.length} subscriptions due for billing in 2-3 days`);
+
+    const results = {
+      notified: 0,
+      skipped: 0,
+      errors: 0,
+      details: [],
+    };
+
+    for (const membership of dueSubscriptions) {
+      try {
+        // Check if redemption already exists for this billing cycle
+        const existingRedemption = await prisma.recurringPayment.findFirst({
+          where: {
+            membershipPaymentId: membership.id,
+            dueDate: membership.nextBillingDate,
+          },
+        });
+
+        if (existingRedemption) {
+          results.skipped++;
+          console.log(`⏭️ Skipping ${membership.merchantSubscriptionId} - redemption already exists`);
+          continue;
+        }
+
+        // Create redemption notification
+        const { merchantOrderId } = generateMerchantIds();
+        const merchantRedemptionId = `REDEMP_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        const authToken = await generateAuthToken();
+
+        const expireAt = Date.now() + (7 * 24 * 60 * 60 * 1000); // 7 days expiry
+
+        const notifyPayload = {
+          merchantOrderId: merchantOrderId,
+          amount: Math.round(membership.amount * 100), // Convert to paise
+          expireAt: expireAt,
+          paymentFlow: {
+            type: 'SUBSCRIPTION_REDEMPTION',
+            merchantSubscriptionId: membership.merchantSubscriptionId,
+            redemptionRetryStrategy: 'STANDARD',
+            autoDebit: true,
+          },
+        };
+
+        console.log(`📤 Sending pre-debit notification for ${membership.email} (billing in 2-3 days)`);
+
+        const response = await axios.post(
+          `${getBaseUrl()}/subscriptions/v2/notify`,
+          notifyPayload,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `${authToken.tokenType} ${authToken.token}`,
+            },
+          }
+        );
+
+        // Create recurring payment record
+        await prisma.recurringPayment.create({
+          data: {
+            membershipPaymentId: membership.id,
+            merchantRedemptionId: merchantRedemptionId,
+            merchantOrderId: merchantOrderId,
+            amount: Math.round(membership.amount * 100),
+            status: 'PENDING',
+            state: response.data.state || 'ACCEPTED',
+            dueDate: membership.nextBillingDate,
+            notifiedAt: new Date(),
+            metadata: JSON.stringify({
+              orderId: response.data.orderId,
+              expireAt: response.data.expireAt,
+              redemptionRetryStrategy: 'STANDARD',
+              autoDebit: true,
+              notificationSentAt: new Date().toISOString(),
+              billingDate: membership.nextBillingDate,
+            }),
+          },
+        });
+
+
+         await sendUpcomingChargeEmail({
+          email: membership.email,
+         name: membership.name,
+           amount: membership.amount,
+          billingDate: membership.nextBillingDate,
+        });
+
+        results.notified++;
+        results.details.push({
+          membershipId: membership.id,
+          merchantRedemptionId,
+          merchantOrderId,
+          orderId: response.data.orderId,
+          billingDate: membership.nextBillingDate,
+          notificationSentAt: new Date(),
+        });
+
+        console.log(`✅ Notified redemption for ${membership.merchantSubscriptionId} - Billing on ${membership.nextBillingDate}`);
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        results.errors++;
+        console.error(`❌ Error notifying redemption for ${membership.merchantSubscriptionId}:`, error.response?.data || error.message);
+      }
+    }
+
+    console.log('✅ Redemption notification completed:', results);
+    return results;
+
+  } catch (error) {
+    console.error('❌ Error in automated redemption notification:', error);
+    throw error;
+  }
+}
+
+/**
+ * Automated Cron Job: Auto-execute redemptions after 24+ hours of notification
+ * This ensures compliance with the 24-hour pre-debit notification requirement
+ */
+async function autoExecuteRedemptions() {
+  try {
+    console.log('⚡ Starting automated redemption execution (24h+ after notification)...');
+
+    // Find redemptions that are notified at least 24 hours ago
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const readyRedemptions = await prisma.recurringPayment.findMany({
+      where: {
+        status: 'PENDING',
+        state: { in: ['ACCEPTED', 'NOTIFICATION_IN_PROGRESS', 'NOTIFICATION_SENT'] },
+        notifiedAt: {
+          lte: twentyFourHoursAgo, // At least 24 hours since notification
+        },
+        executedAt: null, // Not yet executed
+        dueDate: {
+          lte: tomorrow, // Billing date is today or tomorrow
+        },
+      },
+      include: {
+        membershipPayment: true,
+      },
+    });
+
+    console.log(`📊 Found ${readyRedemptions.length} redemptions ready for execution (24h+ after notification)`);
+
+    const results = {
+      executed: 0,
+      skipped: 0,
+      errors: 0,
+      details: [],
+    };
+
+    for (const redemption of readyRedemptions) {
+      try {
+        // Double-check metadata for autoDebit
+        let autoDebit = true;
+        let notificationTime = null;
+        try {
+          const metadata = redemption.metadata ? JSON.parse(redemption.metadata) : {};
+          autoDebit = metadata.autoDebit !== false;
+          notificationTime = metadata.notificationSentAt;
+        } catch (e) {
+          console.log('Could not parse metadata, assuming autoDebit true');
+        }
+
+        if (!autoDebit) {
+          results.skipped++;
+          console.log(`⏭️ Skipping ${redemption.merchantOrderId} - autoDebit disabled`);
+          continue;
+        }
+
+        // Calculate hours since notification
+        const hoursSinceNotification = (new Date() - new Date(redemption.notifiedAt)) / (1000 * 60 * 60);
+        
+        if (hoursSinceNotification < 24) {
+          results.skipped++;
+          console.log(`⏭️ Skipping ${redemption.merchantOrderId} - only ${hoursSinceNotification.toFixed(1)} hours since notification (need 24+)`);
+          continue;
+        }
+
+        const authToken = await generateAuthToken();
+
+        const executePayload = {
+          merchantOrderId: redemption.merchantOrderId,
+        };
+
+        console.log(`🔄 Executing redemption: ${redemption.merchantOrderId} (${hoursSinceNotification.toFixed(1)} hours after notification)`);
+
+        const response = await axios.post(
+          `${getBaseUrl()}/subscriptions/v2/redeem`,
+          executePayload,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `${authToken.tokenType} ${authToken.token}`,
+            },
+          }
+        );
+
+        // Update redemption record
+        await prisma.recurringPayment.update({
+          where: { id: redemption.id },
+          data: {
+            state: response.data.state || 'PENDING',
+            providerReferenceId: response.data.transactionId || null,
+            executedAt: new Date(),
+            metadata: JSON.stringify({
+              ...JSON.parse(redemption.metadata || '{}'),
+              executedAt: new Date().toISOString(),
+              hoursSinceNotification: hoursSinceNotification.toFixed(2),
+            }),
+          },
+        });
+
+        results.executed++;
+        results.details.push({
+          redemptionId: redemption.id,
+          merchantOrderId: redemption.merchantOrderId,
+          state: response.data.state,
+          transactionId: response.data.transactionId,
+          hoursSinceNotification: hoursSinceNotification.toFixed(2),
+        });
+
+        console.log(`✅ Executed redemption: ${redemption.merchantOrderId}`);
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        results.errors++;
+        console.error(`❌ Error executing redemption ${redemption.merchantOrderId}:`, error.response?.data || error.message);
+        
+        // Mark as error in database
+        await prisma.recurringPayment.update({
+          where: { id: redemption.id },
+          data: {
+            state: 'FAILED',
+            status: 'FAILED',
+            payResponseCode: error.response?.data?.code || 'EXECUTION_ERROR',
+            executedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    console.log('✅ Redemption execution completed:', results);
+    return results;
+
+  } catch (error) {
+    console.error('❌ Error in automated redemption execution:', error);
+    throw error;
+  }
+}
+
+/**
+ * Automated Cron Job: Check all pending redemption payment statuses
+ */
+async function checkAllRedemptionStatuses() {
+  try {
+    console.log('🔄 Starting automated redemption status check...');
+
+    // Get all pending redemption payments that have been executed
+    const pendingRedemptions = await prisma.recurringPayment.findMany({
+      where: {
+        status: { in: ['PENDING'] },
+        executedAt: { not: null }, // Only check executed ones
+      },
+      include: {
+        membershipPayment: true,
+      },
+    });
+
+    console.log(`📊 Found ${pendingRedemptions.length} pending redemptions to check`);
+
+    const results = {
+      checked: 0,
+      completed: 0,
+      failed: 0,
+      errors: 0,
+    };
+
+    for (const redemption of pendingRedemptions) {
+      try {
+        const authToken = await generateAuthToken();
+
+        // Check redemption order status
+        const response = await axios.get(
+          `${getBaseUrl()}/subscriptions/v2/order/${redemption.merchantOrderId}/status?details=true`,
+          {
+            headers: {
+              'Authorization': `${authToken.tokenType} ${authToken.token}`,
+            },
+          }
+        );
+
+        results.checked++;
+
+        const updateData = {
+          state: response.data.state,
+          status: response.data.state === 'COMPLETED' ? 'SUCCESS' : 
+                  response.data.state === 'FAILED' ? 'FAILED' : 
+                  'PENDING',
+        };
+
+        if (response.data.paymentDetails && response.data.paymentDetails.length > 0) {
+          const paymentDetail = response.data.paymentDetails[0];
+          updateData.providerReferenceId = paymentDetail.transactionId;
+          
+          if (paymentDetail.errorCode) {
+            updateData.payResponseCode = paymentDetail.errorCode;
+          }
+        }
+
+        if (response.data.state === 'COMPLETED') {
+          updateData.completedAt = new Date();
+          results.completed++;
+          
+          // Update next billing date
+          const membership = redemption.membershipPayment;
+          const nextBilling = new Date(membership.nextBillingDate);
+          
+          // For annual subscriptions, add 1 year
+          if (membership.subscriptionFrequency === 'YEARLY') {
+            nextBilling.setFullYear(nextBilling.getFullYear() + 1);
+          }
+
+          await prisma.membershipPayment.update({
+            where: { id: membership.id },
+            data: { nextBillingDate: nextBilling },
+          });
+
+          // Create payment record
+          await prisma.payment.create({
+            data: {
+              userId: membership.userId || null,
+              referenceId: redemption.merchantOrderId,
+              provider: 'PHONEPE',
+              amount: redemption.amount / 100, // Convert paise to rupees
+              status: 'success',
+              type: 'recurring_payment',
+              metadata: JSON.stringify({ 
+                recurringPaymentId: redemption.id,
+                membershipPaymentId: membership.id,
+                subscriptionId: membership.merchantSubscriptionId,
+              }),
+            },
+          });
+
+          console.log(`✅ Redemption completed: ${redemption.merchantOrderId} - Next billing: ${nextBilling}`);
+        } else if (response.data.state === 'FAILED') {
+          results.failed++;
+          console.log(`❌ Redemption failed: ${redemption.merchantOrderId}`);
+        }
+
+        await prisma.recurringPayment.update({
+          where: { id: redemption.id },
+          data: updateData,
+        });
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        results.errors++;
+        console.error(`❌ Error checking redemption ${redemption.merchantOrderId}:`, error.message);
+      }
+    }
+
+    console.log('✅ Redemption status check completed:', results);
+    return results;
+
+  } catch (error) {
+    console.error('❌ Error in automated redemption check:', error);
+    throw error;
+  }
+}
+
+/**
+ * Combined: Check redemption statuses and auto-execute if needed
+ */
+async function checkAndExecuteRedemptions() {
+  try {
+    console.log('🔄 Starting redemption check and execution...');
+
+    const results = {
+      timestamp: new Date().toISOString(),
+      statusCheck: null,
+      autoExecution: null,
+    };
+
+    // 1. First, check status of all pending redemptions
+    results.statusCheck = await checkAllRedemptionStatuses();
+
+    // 2. Then, auto-execute ready redemptions (24h+ after notification)
+    results.autoExecution = await autoExecuteRedemptions();
+
+    console.log('✅ Redemption check and execution completed');
+    return results;
+
+  } catch (error) {
+    console.error('❌ Error in redemption check and execution:', error);
+    throw error;
+  }
+}
+
+/**
+ * Master Cron Job: Run all automated checks including execution
+ */
+async function runAllAutomatedChecks(req, res) {
+  try {
+    console.log('🚀 Starting all automated checks...');
+
+    const results = {
+      timestamp: new Date().toISOString(),
+      subscriptionCheck: null,
+      redemptionNotifications: null,
+      redemptionCheckAndExecute: null,
+    };
+
+    // 1. Check all subscription statuses
+    console.log('1️⃣ Checking subscription statuses...');
+    results.subscriptionCheck = await checkAllSubscriptionStatuses();
+
+    // 2. Notify redemptions for due annual memberships (2-3 days in advance)
+    console.log('2️⃣ Notifying redemptions (48-72h advance notice)...');
+    results.redemptionNotifications = await autoNotifyAnnualRedemptions();
+
+    // 3. Check redemption statuses and auto-execute (24h+ after notification)
+    console.log('3️⃣ Checking and executing redemptions (24h+ after notification)...');
+    results.redemptionCheckAndExecute = await checkAndExecuteRedemptions();
+
+    console.log('✅ All automated checks completed successfully');
+
+    if (res) {
+      return res.status(200).json({
+        success: true,
+        message: 'All automated checks completed',
+        data: results,
+      });
+    }
+
+    return results;
+
+  } catch (error) {
+    console.error('❌ Error in automated checks:', error);
+    
+    if (res) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error running automated checks',
+        error: error.message,
+      });
+    }
+
+    throw error;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 export {
-  // One-time payments
+  
   initiateOneTimePayment,
   checkPaymentStatus,
+  deleteSubscription,
   
-  // VPA Validation
+
   validateUpiVpa,
   
-  // Subscription Setup (AutoPay)
+
   createSubscriptionSetup,
   getSubscriptionOrderStatus,
   getSubscriptionStatus,
   
-  // Recurring payments (Redemption)
+
   notifyRedemption,
   executeRedemption,
   getRedemptionOrderStatus,
   
-  // Subscription management
+
   cancelSubscription,
   
-  // Webhooks
-  handleWebhook,
-  
-  // Helper functions
+
+
   getAllPayments,
   getSubscriptionRecurringPayments,
+
+
+
+
+
+  checkAllSubscriptionStatuses,
+  autoNotifyAnnualRedemptions,
+  checkAllRedemptionStatuses,
+  autoExecuteRedemptions,
+  checkAndExecuteRedemptions,
+  runAllAutomatedChecks,
 }

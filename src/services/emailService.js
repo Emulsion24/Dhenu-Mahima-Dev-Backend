@@ -146,3 +146,33 @@ Dhenu Mahima Team
 
   await transporter.sendMail(mailOptions);
 };
+
+
+export async function sendUpcomingChargeEmail({ email, name, amount, billingDate }) {
+  const formattedDate = new Date(billingDate).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM,
+    to: email,
+    subject: 'Upcoming Membership Renewal - Dhenu Mahima',
+    html: `
+      <h2>Hi ${name},</h2>
+      <p>Your annual membership will be renewed soon.</p>
+      <h3>Renewal Details:</h3>
+      <ul>
+        <li><strong>Amount:</strong> ₹${amount}</li>
+        <li><strong>Renewal Date:</strong> ${formattedDate}</li>
+        <li><strong>Membership Type:</strong> Annual</li>
+      </ul>
+      <p>The payment will be automatically processed on the renewal date.</p>
+      <p>If you wish to cancel, please contact us before ${formattedDate}.</p>
+      <p>Thank you for your continued support!</p>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+}

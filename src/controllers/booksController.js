@@ -323,7 +323,6 @@ export const streamPdf = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-    console.log(id)
 
     // Check if user purchased this book
     const purchase = await prisma.bookPurchase.findUnique({
@@ -356,34 +355,80 @@ export const streamPdf = async (req, res) => {
 
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
- const rawName = purchase.book.name || "book";
-    const safeFilename = encodeURIComponent(rawName.replace(/[^a-zA-Z0-9_\-. ]/g, "_").trim());
-    // Set headers to prevent download and enable inline viewing
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Length', fileSize);
-       res.setHeader("Content-Disposition", `inline; filename="${safeFilename}.pdf"`);
+    const range = req.headers.range;
+
+    // Set security headers
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
+    
+    // Prevent caching to enhance security
     res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    // Stream the file
-    const stream = fs.createReadStream(filePath);
-    stream.pipe(res);
+    const rawName = purchase.book.name || "book";
+    const safeFilename = encodeURIComponent(rawName.replace(/[^a-zA-Z0-9_\-. ]/g, "_").trim());
 
-    stream.on('error', (error) => {
-      console.error('Stream error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error streaming PDF'
+    // Support Range Requests for faster loading
+    if (range) {
+      // Parse range header
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunksize = (end - start) + 1;
+
+      // Create stream for the requested range
+      const stream = fs.createReadStream(filePath, { start, end });
+
+      // Set partial content headers
+      res.status(206); // Partial Content
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Length', chunksize);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${safeFilename}.pdf"`);
+
+      // Pipe the stream
+      stream.pipe(res);
+
+      stream.on('error', (error) => {
+        console.error('Stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: 'Error streaming PDF'
+          });
+        }
       });
-    });
+    } else {
+      // No range request - send entire file (fallback)
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', fileSize);
+      res.setHeader('Content-Disposition', `inline; filename="${safeFilename}.pdf"`);
+      res.setHeader('Accept-Ranges', 'bytes');
+
+      const stream = fs.createReadStream(filePath);
+      stream.pipe(res);
+
+      stream.on('error', (error) => {
+        console.error('Stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: 'Error streaming PDF'
+          });
+        }
+      });
+    }
   } catch (error) {
     console.error('Stream PDF error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to stream PDF'
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to stream PDF'
+      });
+    }
   }
 };
 
