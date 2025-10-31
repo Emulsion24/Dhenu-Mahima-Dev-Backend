@@ -2,7 +2,9 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import axios from "axios";
 import { prisma } from "../prisma/config.js";
-
+import { sendMembershipThankYouEmail} from "../services/emailService.js";
+import { MetaInfo, StandardCheckoutPayRequest } from "pg-sdk-node";
+import phonePe from "../utils/phonepeClient.js";
 dotenv.config();
 
 // PhonePe Configuration
@@ -31,19 +33,10 @@ const getAuthUrl = () => {
     : 'https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token';
 };
 
-// ==================== UTILITY FUNCTIONS ====================
 
-/**
- * Generate X-VERIFY header for PhonePe API (for standard payment gateway)
- */
-function generateXVerify(payload, endpoint) {
-  const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
-  const checksum = crypto
-    .createHash('sha256')
-    .update(base64Payload + endpoint + PHONEPE_CONFIG.saltKey)
-    .digest('hex');
-  return `${checksum}###${PHONEPE_CONFIG.saltIndex}`;
-}
+
+
+
 
 /**
  * Generate Authorization Token for AutoPay APIs
@@ -91,11 +84,9 @@ function generateMerchantIds() {
   };
 }
 
-// ==================== ONE-TIME PAYMENT (UPI COLLECT) ====================
+// ==================== ONE-TIME PAYMENT  ====================
 
-/**
- * Initiate One-Time Payment using UPI Collect
- */
+
 async function initiateOneTimePayment(req, res) {
   try {
     const {
@@ -122,35 +113,26 @@ const amount=11000;
 
     const { merchantTransactionId, merchantUserId } = generateMerchantIds();
     const amountInPaise = Math.round(amount * 100);
+ const redirectUrl = `${process.env.BACKEND_URL}/api/membership/order-status-onetime?orderId=${merchantTransactionId}`;
 
-    const paymentPayload = {
-      merchantId: PHONEPE_CONFIG.merchantId,
-      merchantTransactionId: merchantTransactionId,
-      merchantUserId: userId ? userId.toString() : merchantUserId,
-      amount: amountInPaise,
-      callbackUrl: PHONEPE_CONFIG.callbackUrl,
-      mobileNumber: phone,
-      paymentInstrument: {
-        type: 'UPI_COLLECT',
-        vpa: vpaAddress,
-      },
-    };
+  const metaInfo = MetaInfo.builder()
+       .udf1(String(userId)||name)
+       .udf2("Life Time Membership Payment")
+       .build();
+       const request = StandardCheckoutPayRequest.builder()
+             .merchantOrderId(merchantTransactionId)
+             .amount(amountInPaise)
+             .redirectUrl(redirectUrl)
+             .metaInfo(metaInfo)
+             .build();
+    
+    const response = await phonePe.pay(request);
 
-    const base64Payload = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
-    const xVerify = generateXVerify(paymentPayload, '/pg/v1/pay');
-
-    const response = await axios.post(
-      `${getBaseUrl()}/pg/v1/pay`,
-      {
-        request: base64Payload,
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-VERIFY': xVerify,
-        },
-      }
-    );
+   if (!response || !response.redirectUrl) {
+      console.error("PhonePe Payment Error:", response);
+      return res.status(500).json({ message: "Failed to initiate PhonePe payment" });
+    }
+   
 
     const payment = await prisma.membershipPayment.create({
       data: {
@@ -162,19 +144,14 @@ const amount=11000;
         city: city || '',
         state: state || '',
         pincode: pincode || '',
-        membershipType: membershipType,
+        membershipType:'Life Time',
         amount: amountInPaise,
         status: 'pending',
         transactionId: merchantTransactionId,
         orderId: merchantTransactionId,
         merchantOrderId: merchantTransactionId,
-        paymentMethod: 'UPI_COLLECT',
-        providerReferenceId: null,
-        metadata: JSON.stringify({ 
-          vpaAddress,
-          paymentType: 'ONE_TIME',
-          merchantUserId: userId ? userId.toString() : merchantUserId,
-        }),
+        paymentMethod: 'Phone Pe',
+        
       },
     });
 
@@ -188,95 +165,64 @@ const amount=11000;
         type: 'one_time',
         metadata: JSON.stringify({ 
           membershipPaymentId: payment.id,
-          vpaAddress,
+      
         }),
       },
     });
 
     return res.status(200).json({
-      success: true,
-      message: 'Payment request sent. Please check your UPI app to approve.',
-      data: {
-        membershipPaymentId: payment.id,
-        merchantTransactionId: merchantTransactionId,
-        code: response.data.code,
-        message: response.data.message,
-        instrumentResponse: response.data.data?.instrumentResponse,
-      },
+      redirectUrl: response.redirectUrl,
+      orderId: merchantTransactionId,
     });
   } catch (error) {
-    console.error('Error initiating payment:', error.response?.data || error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to initiate payment',
-      error: error.response?.data || error.message,
-    });
+    console.error("Create Donation Error:", error.response?.data || error.message);
+    return res.status(500).json({ message: "Internal server error" });
   }
 }
 
-/**
- * Check One-Time Payment Status
- */
 async function checkPaymentStatus(req, res) {
   try {
-    const { merchantTransactionId } = req.params;
+const { orderId } = req.query;
+const merchantTransactionId=orderId;
 
-    const statusEndpoint = `/pg/v1/status/${PHONEPE_CONFIG.merchantId}/${merchantTransactionId}`;
-    const xVerify = crypto
-      .createHash('sha256')
-      .update(statusEndpoint + PHONEPE_CONFIG.saltKey)
-      .digest('hex') + '###' + PHONEPE_CONFIG.saltIndex;
+  if (!merchantTransactionId) {
+      return res.status(400).send("Missing orderId in callback");
+    }
+     let status = "pending";
+    try {
+      const orderStatusResponse = await phonePe.getOrderStatus(merchantTransactionId);
+      if (orderStatusResponse?.state === "COMPLETED") status = "success";
+      else if (orderStatusResponse?.state === "FAILED") status = "failed";
+    } catch (err) {
+      console.error("Error fetching PhonePe order status:", err.message);
+    }
+      // Update donation in DB
+    
 
-    const response = await axios.get(
-      `${getBaseUrl()}${statusEndpoint}`,
-      {
-        headers: {
-          'X-VERIFY': xVerify,
-          'X-MERCHANT-ID': PHONEPE_CONFIG.merchantId,
-        },
-      }
-    );
 
-    const payment = await prisma.membershipPayment.findFirst({
-      where: { merchantOrderId: merchantTransactionId },
-    });
-
-    if (payment) {
-      const updateData = {
-        status: response.data.code === 'PAYMENT_SUCCESS' ? 'active' : 
-                response.data.code === 'PAYMENT_ERROR' ? 'failed' : 
-                'pending',
-        providerReferenceId: response.data.data?.transactionId || null,
-        payResponseCode: response.data.code,
-        callbackData: JSON.stringify(response.data),
-      };
-
-      await prisma.membershipPayment.update({
-        where: { id: payment.id },
-        data: updateData,
+      const updatedMembership= await prisma.membershipPayment.update({
+        where: { merchantOrderId: merchantTransactionId },
+        data:{ status },
       });
 
       await prisma.payment.updateMany({
         where: { referenceId: merchantTransactionId },
-        data: {
-          status: response.data.code === 'PAYMENT_SUCCESS' ? 'success' : 
-                  response.data.code === 'PAYMENT_ERROR' ? 'failed' : 
-                  'pending',
-        },
+        data: { status },
       });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: response.data,
-    });
-  } catch (error) {
-    console.error('Error checking payment status:', error.response?.data || error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to check payment status',
-      error: error.response?.data || error.message,
-    });
+      if (status === "success" && updatedMembership.email) {
+              await sendMembershipThankYouEmail({
+              name: updatedMembership.name,
+              email: updatedMembership.email,
+              amount: updatedMembership.amount,
+              transactionId: updatedMembership.transactionId ,
+              membershipType:updatedMembership.membershipType,
+          });}
+      return res.redirect(
+      `${process.env.FRONTEND_URL}/magazine-status?status=${status}&txn=${merchantTransactionId}&amount=${updatedMembership.amount}`
+    );
+  } catch (err) {
+    console.error("Magazine Payment Callback Error:", err.message);
+    res.status(500).send("Callback handling failed");
   }
 }
 
@@ -345,13 +291,12 @@ async function createSubscriptionSetup(req, res) {
       vpa,
       pincode,
       membershipType,
-   // First debit amount for TRANSACTION, 200 paise for PENNY_DROP
-      // Maximum amount that can be debited
-      authWorkflowType = 'TRANSACTION', // TRANSACTION or PENNY_DROP
-      amountType = 'FIXED', // FIXED or VARIABLE
-      frequency = 'YEARLY', // DAILY, WEEKLY, MONTHLY, YEARLY, QUARTERLY, etc.
-      recurringCount = 10, // Number of cycles (30 years = expiry)
-      paymentMode, // { type: 'UPI_INTENT', targetApp: 'com.phonepe.app' } or 
+  
+      authWorkflowType = 'TRANSACTION', 
+      amountType = 'FIXED', 
+      frequency = 'YEARLY', 
+      recurringCount = 10, 
+      
 
     } = req.body;
 
@@ -362,13 +307,6 @@ async function createSubscriptionSetup(req, res) {
       });
     }
     const amount=1100;
-    // Validation based on authWorkflowType
-    if (authWorkflowType === 'PENNY_DROP' && amount !== 200) {
-      return res.status(400).json({
-        success: false,
-        message: 'For PENNY_DROP flow, amount must be 200 paise (₹2)',
-      });
-    }
 
     if (authWorkflowType === 'TRANSACTION' && amount < 100) {
       return res.status(400).json({
@@ -386,7 +324,7 @@ async function createSubscriptionSetup(req, res) {
     // Calculate subscription expiry (30 years from now by default)
     const subscriptionExpiry = Date.now() + (30 * 365 * 24 * 60 * 60 * 1000);
     const orderExpiry = Date.now() + (5 * 60 * 1000); // 5 minutes
-
+const paymentMode={ type: 'UPI_COLLECT', details: { type: 'VPA', vpa: vpa }};
     const subscriptionPayload = {
       merchantOrderId: merchantOrderId,
       amount: amountInPaise,
@@ -399,7 +337,7 @@ async function createSubscriptionSetup(req, res) {
         maxAmount: amountInPaise,
         frequency: frequency,
         expireAt: subscriptionExpiry,
-        paymentMode: { type: 'UPI_COLLECT', details: { type: 'VPA', vpa: vpa }}
+        paymentMode:paymentMode,
       },
      
     };
@@ -535,40 +473,22 @@ async function getSubscriptionOrderStatus(req, res) {
         
         // Calculate next billing date based on frequency
         const nextBilling = new Date();
-        switch (membership.subscriptionFrequency) {
-          case 'DAILY':
-            nextBilling.setDate(nextBilling.getDate() + 1);
-            break;
-          case 'WEEKLY':
-            nextBilling.setDate(nextBilling.getDate() + 7);
-            break;
-          case 'FORTNIGHTLY':
-            nextBilling.setDate(nextBilling.getDate() + 14);
-            break;
-          case 'MONTHLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 1);
-            break;
-          case 'BIMONTHLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 2);
-            break;
-          case 'QUARTERLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 3);
-            break;
-          case 'HALFYEARLY':
-            nextBilling.setMonth(nextBilling.getMonth() + 6);
-            break;
-          case 'YEARLY':
-            nextBilling.setFullYear(nextBilling.getFullYear() + 1);
-            break;
-        }
-        updateData.nextBillingDate = nextBilling;
+       nextBilling.setFullYear(nextBilling.getFullYear() + 1);
+       updateData.nextBillingDate = nextBilling;
       }
 
-      await prisma.membershipPayment.update({
+    const updatedMembership=  await prisma.membershipPayment.update({
         where: { id: membership.id },
         data: updateData,
       });
-
+ if (response.data.state  === "COMPLETED" && updatedMembership.email) {
+              await sendMembershipThankYouEmail({
+              name: updatedMembership.name,
+              email: updatedMembership.email,
+              amount: updatedMembership.amount,
+              transactionId: updatedMembership.transactionId ,
+              membershipType:updatedMembership.membershipType,
+          });}
       // Update payment record
       await prisma.payment.updateMany({
         where: { referenceId: membership.merchantSubscriptionId },
@@ -976,7 +896,7 @@ async function cancelSubscription(req, res) {
 async function handleWebhook(req, res) {
   try {
     const { event, payload } = req.body;
-
+   console.log('PhonePe Webhook Event:', event);
     // Validate webhook authentication (if configured)
     const authHeader = req.headers['authorization'];
     if (process.env.PHONEPE_WEBHOOK_USERNAME && process.env.PHONEPE_WEBHOOK_PASSWORD) {
@@ -994,7 +914,7 @@ async function handleWebhook(req, res) {
       }
     }
 
-    console.log('PhonePe Webhook Event:', event);
+    console.log('PhonePe Webhook Event: after verification ', event);
     console.log('PhonePe Webhook Payload:', JSON.stringify(payload, null, 2));
 
     // Route to appropriate handler based on event type
@@ -1060,32 +980,9 @@ async function handleSubscriptionSetupWebhook(payload) {
       updateData.subscriptionStartDate = new Date();
       
       const nextBilling = new Date();
-      switch (membership.subscriptionFrequency) {
-        case 'DAILY':
-          nextBilling.setDate(nextBilling.getDate() + 1);
-          break;
-        case 'WEEKLY':
-          nextBilling.setDate(nextBilling.getDate() + 7);
-          break;
-        case 'FORTNIGHTLY':
-          nextBilling.setDate(nextBilling.getDate() + 14);
-          break;
-        case 'MONTHLY':
-          nextBilling.setMonth(nextBilling.getMonth() + 1);
-          break;
-        case 'BIMONTHLY':
-          nextBilling.setMonth(nextBilling.getMonth() + 2);
-          break;
-        case 'QUARTERLY':
-          nextBilling.setMonth(nextBilling.getMonth() + 3);
-          break;
-        case 'HALFYEARLY':
-          nextBilling.setMonth(nextBilling.getMonth() + 6);
-          break;
-        case 'YEARLY':
-          nextBilling.setFullYear(nextBilling.getFullYear() + 1);
-          break;
-      }
+      nextBilling.setFullYear(nextBilling.getFullYear() + 1);
+         
+      
       updateData.nextBillingDate = nextBilling;
     }
 
