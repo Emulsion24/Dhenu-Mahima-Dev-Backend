@@ -356,11 +356,12 @@ export const streamPdf = async (req, res) => {
 
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
-
+ const rawName = purchase.book.name || "book";
+    const safeFilename = encodeURIComponent(rawName.replace(/[^a-zA-Z0-9_\-. ]/g, "_").trim());
     // Set headers to prevent download and enable inline viewing
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', fileSize);
-    res.setHeader('Content-Disposition', 'inline; filename="' + purchase.book.name + '.pdf"');
+       res.setHeader("Content-Disposition", `inline; filename="${safeFilename}.pdf"`);
     res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
