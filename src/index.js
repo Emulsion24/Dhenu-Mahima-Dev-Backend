@@ -40,22 +40,13 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ========================================
-// ✅ CORS CONFIGURATION (MUST BE FIRST!)
-// ========================================
+
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-
-      `${FRONTEND_URL}`,
-  
     
-      
-    ];
+    const allowedOrigins = [ `${FRONTEND_URL}`];
 
-    // ✅ Allow requests with no origin (Postman, mobile app, etc.)
-    // ✅ Allow all Vercel preview subdomains
-    if (!origin || allowedOrigins.includes(origin) || /\.vercel\.app$/.test(origin)) {
+    if (!origin || allowedOrigins.includes(origin) ) {
       callback(null, true);
     } else {
       console.warn(`❌ CORS blocked origin: ${origin}`);

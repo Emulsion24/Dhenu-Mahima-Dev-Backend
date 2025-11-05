@@ -125,11 +125,7 @@ export const deleteDonation = async (req, res) => {
     res.status(500).json({ message: 'Error deleting donation', error: error.message });
   }
 };
-/**
- * @desc    Get donation statistics
- * @route   GET /api/donations/stats
- * @access  Private
- */
+
 export const getDonationStats = async (req, res) => {
   try {
     const where = getDonationFilters(req.query);

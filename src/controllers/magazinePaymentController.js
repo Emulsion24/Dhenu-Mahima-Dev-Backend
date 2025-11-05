@@ -1092,11 +1092,8 @@ async function getSubscriptionRecurringPayments(req, res) {
 
 // ==================== Corn Job====================
 
-/**
- * Automated Cron Job: Check all active subscriptions and update their status
- */
-/**
- * Automated Cron Job: Check all active subscriptions and update their status
+
+ /* Automated Cron Job: Check all active subscriptions and update their status
  */
 async function checkAllSubscriptionStatuses() {
   try {

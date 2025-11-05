@@ -334,7 +334,7 @@ export const updateBhajan = async (req, res) => {
 export const deleteBhajan = async (req, res) => {
   try {
     const { id } = req.params;
-    const bhajanId = parseInt(id);
+    const bhajanId = id;
 
     // ✅ Find the bhajan first
     const bhajan = await prisma.bhajan.findUnique({ where: { id: bhajanId } });
