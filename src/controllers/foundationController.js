@@ -17,9 +17,9 @@ const clearCachePattern = async (pattern) => {
 // Get all foundations
 export const getAllFoundations = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, isActive } = req.query;
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    const { page = 1, limit = 15, search, isActive } = req.query;
+    const pageNum = parseInt(page, 15);
+    const limitNum = parseInt(limit, 15);
     const cacheKey = `foundations:all:${pageNum}:${limitNum}:${search || ''}:${isActive || ''}`;
 
     // Check cache first

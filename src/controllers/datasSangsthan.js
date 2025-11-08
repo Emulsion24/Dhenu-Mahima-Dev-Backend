@@ -117,22 +117,23 @@ export const createSansthan = async (req, res) => {
       await fs.unlink(req.file.path);
     }
 
-    const fullAddress = address && city && state && pincode 
-      ? `${address}, ${city}, ${state} - ${pincode}`
-      : null;
+
 
     const sansthan = await prisma.dtaSanssthan.create({
       data: {
         name,
         person,
         image: imageUrl,
-        description: fullAddress && description 
-          ? `${description}\n\nAddress: ${fullAddress}`
-          : description || fullAddress,
+        description: description,
+
         email,
         phone,
         altPhone,
         website,
+        address,
+        city,
+        state,
+        pincode,
         timing
       }
     });
@@ -205,9 +206,6 @@ export const updateSansthan = async (req, res) => {
       await fs.unlink(req.file.path);
     }
 
-    const fullAddress = address && city && state && pincode 
-      ? `${address}, ${city}, ${state} - ${pincode}`
-      : null;
 
     const updatedSansthan = await prisma.dtaSanssthan.update({
       where: { id: parseInt(id) },
@@ -215,9 +213,12 @@ export const updateSansthan = async (req, res) => {
         name: name || existingSansthan.name,
         person,
         image: imageUrl,
-        description: fullAddress && description 
-          ? `${description}\n\nAddress: ${fullAddress}`
-          : description || fullAddress || existingSansthan.description,
+        description: description,
+        state,
+        city,
+        pincode,
+        address, 
+         
         email: email || existingSansthan.email,
         phone: phone || existingSansthan.phone,
         altPhone,

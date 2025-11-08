@@ -150,6 +150,13 @@ export const createNews = async (req, res, next) => {
       tags,
       author,
     } = req.body;
+// If featured is true, unfeature all other news first
+if (featured === 'true' || featured === true) {
+  await prisma.news.updateMany({
+    where: { featured: true },
+    data: { featured: false },
+  });
+}
 
 
     // Generate unique slug
@@ -158,8 +165,7 @@ export const createNews = async (req, res, next) => {
     // Handle image upload
    const BASE_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 let imagePath = req.file ? `${BASE_URL}/uploads/news/${req.file.filename}` : `${BASE_URL}/images/1.png`;
-console.log(BASE_URL)
-console.log(imagePath)
+
     // Parse content and tags if they're strings
     const parsedContent = typeof content === 'string' ? JSON.parse(content) : content;
     const parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;
@@ -232,6 +238,13 @@ export const updateNews = async (req, res, next) => {
       tags,
       author,
     } = req.body;
+// If featured is true, unfeature all other news first
+if (featured === 'true' || featured === true) {
+  await prisma.news.updateMany({
+    where: { featured: true },
+    data: { featured: false },
+  });
+}
 
     // Generate new slug if title changed
     let slug = existingNews.slug;

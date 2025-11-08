@@ -264,6 +264,10 @@ model DtaSanssthan {
   person    String?
   image       String?   // optional logo or representative image
   description String?
+  address     String?
+  state       String?
+  city        String?
+  pincode     String?
   email       String?
   phone       String?
   altPhone    String?
@@ -497,7 +501,7 @@ model Event {
 
 model Bhajan {
   id          String   @id @default(uuid())
-  order     Int              @default(0)
+  order       Int              @default(0)
   name        String
   artist      String
   album       String?

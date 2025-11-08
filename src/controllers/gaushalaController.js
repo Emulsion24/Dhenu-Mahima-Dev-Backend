@@ -70,7 +70,7 @@ export const createGaushala = async (req, res) => {
     
 const { name, address, establishmentDate, totalCows, capacity, phone} = req.body;
 
-    if (!name || !address || !establishmentDate || !totalCows || !capacity ||  !phone ) {
+    if (!name || !address || !establishmentDate ||  !phone ) {
      return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
@@ -82,8 +82,8 @@ const { name, address, establishmentDate, totalCows, capacity, phone} = req.body
        
     
         establishmentYear,
-        totalCows: Number(totalCows),
-        capacity: Number(capacity),
+        totalCows: Number(totalCows)||0,
+        capacity: Number(capacity)||0,
      
         contactDetails: JSON.stringify({ phone }),
   
@@ -111,17 +111,7 @@ export const updateGaushala = async (req, res) => {
     
 
     // 🧾 Extract data from request body
-    const {
-      name,
-      address,
-   
- 
-      totalCows,
-      capacity,
-  
-      phone,
-    
-    } = req.body;
+    const {name,address,totalCows,capacity,phone,} = req.body;
 
     // 🗓️ Compute establishmentYear safely
     // Node.js backend
@@ -131,15 +121,15 @@ const establishmentYear= new Date(req.body.establishmentDate).toISOString();
     const updatedGaushala = await prisma.gaushala.update({
       where: { id: gaushalaId },
       data: {
-        name: name || existing.name,
-        address: address || existing.address,
+        name: name || null,
+        address: address || null,
        
         establishmentYear:establishmentYear,
-        totalCows: totalCows ? Number(totalCows) : existing.totalCows,
-        capacity: capacity ? Number(capacity) : existing.capacity,
+        totalCows: totalCows ? Number(totalCows) : 0,
+        capacity: capacity ? Number(capacity) : 0,
         
         contactDetails: JSON.stringify({
-          phone: phone || JSON.parse(existing.contactDetails)?.phone || "",
+          phone: phone || null,
          
         }),
   
