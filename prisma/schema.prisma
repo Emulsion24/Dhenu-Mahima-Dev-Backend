@@ -263,11 +263,9 @@ model DtaSanssthan {
   name        String
   person    String?
   image       String?   // optional logo or representative image
-  description String?
+ 
   address     String?
-  state       String?
-  city        String?
-  pincode     String?
+ 
   email       String?
   phone       String?
   altPhone    String?
@@ -275,6 +273,7 @@ model DtaSanssthan {
   timing      String?   // working hours / schedule
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  order     Int      @default(0)
 }
 //////////////////////////////
 // PRIVACY POLICY

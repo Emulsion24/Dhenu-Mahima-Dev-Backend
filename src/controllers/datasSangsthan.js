@@ -1,9 +1,9 @@
 import { prisma } from '../prisma/config.js';
 import cloudinary from '../utils/cloudinary.js';
-import redisClient from '../services/redis.js'; // ✅ Add Redis
+import redisClient from '../services/redis.js';
 import fs from "fs/promises";
 
-// ✅ GET ALL SANSTHANS (Cached)
+// ✅ GET ALL SANSTHANS (Cached & Ordered)
 export const getAllSansthans = async (req, res) => {
   try {
     const cacheKey = "all_sansthans";
@@ -16,7 +16,8 @@ export const getAllSansthans = async (req, res) => {
 
     console.log("Cache Miss: All Sansthans");
     const sansthans = await prisma.dtaSanssthan.findMany({
-      orderBy: { createdAt: 'desc' }
+      // MODIFIED: Order by the new 'order' field
+      orderBy: { order: 'asc' } 
     });
 
     const response = {
@@ -40,6 +41,7 @@ export const getAllSansthans = async (req, res) => {
 };
 
 // ✅ GET SINGLE SANSTHAN (Cached)
+// (No changes needed here)
 export const getSansthanById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -77,22 +79,18 @@ export const getSansthanById = async (req, res) => {
   }
 };
 
-// ✅ CREATE NEW SANSTHAN (Invalidate Cache)
+// ✅ CREATE NEW SANSTHAN (Invalidate Cache & Set Order)
 export const createSansthan = async (req, res) => {
   try {
     const {
       name,
       person,
-      description,
       email,
       phone,
       altPhone,
       website,
       timing,
       address,
-      city,
-      state,
-      pincode
     } = req.body;
 
     if (!name || !email || !phone) {
@@ -117,24 +115,23 @@ export const createSansthan = async (req, res) => {
       await fs.unlink(req.file.path);
     }
 
-
+    // --- MODIFIED: Set initial order ---
+    // Get the current count of sansthans to set the order for the new one
+    const currentCount = await prisma.dtaSanssthan.count();
+    // ------------------------------------
 
     const sansthan = await prisma.dtaSanssthan.create({
       data: {
         name,
         person,
         image: imageUrl,
-        description: description,
-
         email,
         phone,
         altPhone,
         website,
         address,
-        city,
-        state,
-        pincode,
-        timing
+        timing,
+        order: currentCount // Set the order to be the last item
       }
     });
 
@@ -157,22 +154,19 @@ export const createSansthan = async (req, res) => {
 };
 
 // ✅ UPDATE SANSTHAN (Invalidate Cache)
+// (No changes needed here, it correctly invalidates cache)
 export const updateSansthan = async (req, res) => {
   try {
     const { id } = req.params;
     const {
       name,
       person,
-      description,
       email,
       phone,
       altPhone,
       website,
       timing,
       address,
-      city,
-      state,
-      pincode
     } = req.body;
 
     const existingSansthan = await prisma.dtaSanssthan.findUnique({
@@ -206,19 +200,15 @@ export const updateSansthan = async (req, res) => {
       await fs.unlink(req.file.path);
     }
 
-
+    // NOTE: We do not update 'order' here. 'order' is only updated
+    // by the reorderSansthans function.
     const updatedSansthan = await prisma.dtaSanssthan.update({
       where: { id: parseInt(id) },
       data: {
         name: name || existingSansthan.name,
         person,
         image: imageUrl,
-        description: description,
-        state,
-        city,
-        pincode,
         address, 
-         
         email: email || existingSansthan.email,
         phone: phone || existingSansthan.phone,
         altPhone,
@@ -247,6 +237,7 @@ export const updateSansthan = async (req, res) => {
 };
 
 // ✅ DELETE SANSTHAN (Invalidate Cache)
+// (No changes needed here, it correctly invalidates cache)
 export const deleteSansthan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -284,6 +275,41 @@ export const deleteSansthan = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to delete sansthan',
+      error: error.message
+    });
+  }
+};
+
+
+// 🚀 --- NEW FUNCTION --- 🚀
+// ✅ REORDER SANSTHANS (Invalidate Cache)
+export const reorderSansthans = async (req, res) => {
+  const { orderData } = req.body; // Expects: { orderData: [{ id: "...", order: 0 }, ...] }
+
+  if (!orderData || !Array.isArray(orderData)) {
+    return res.status(400).json({ success: false, message: "Invalid order data" });
+  }
+
+  try {
+    // Use a transaction to update all items in one go
+    const updatePromises = orderData.map((item) =>
+      prisma.dtaSanssthan.update({
+        where: { id: parseInt(item.id) },
+        data: { order: parseInt(item.order) },
+      })
+    );
+
+    await prisma.$transaction(updatePromises);
+
+    // 🧹 Invalidate the cache for the list
+    await redisClient.del("all_sansthans");
+
+    res.json({ success: true, message: "Order updated successfully" });
+  } catch (error) {
+    console.error('Error reordering sansthans:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update order',
       error: error.message
     });
   }
