@@ -209,7 +209,7 @@ model GopalPariwar {
   heroTitle           String
   heroSubtitle        String
   personalInfo        Json
-  spiritualEducation  String?
+  spiritualEducation  Json?
   socialLinks         Json?
   lifeJourney         Json
   responsibilities    Json
