@@ -30,25 +30,25 @@ export const createGopal = async (req, res) => {
       socialLinks,
     } = req.body;
 
-    // 🧮 Get the current max order
+    // Get the current max order
     const maxOrderObj = await prisma.gopalPariwar.aggregate({
       _max: { order: true },
     });
 
     const nextOrder = (maxOrderObj._max.order || 0) + 1;
 
-    // ✅ Create new Gopal entry
+    // ✅ FIX: Pass all JSON strings directly, just like in your update function
     const newGopal = await prisma.gopalPariwar.create({
       data: {
         heroImage: result.secure_url,
         heroTitle,
         heroSubtitle,
-        personalInfo, // ✅ Pass directly (assuming it's a JSON string from FormData)
-        spiritualEducation, // ✅ FIX: Pass directly, just like in updateGopal
+        personalInfo,       // Pass string as-is
+        spiritualEducation, // Pass string as-is
         lifeJourney,
         responsibilities,
         pledges,
-        socialLinks, // ✅ FIX: Pass directly, just like in updateGopal
+        socialLinks,        // Pass string as-is
         order: nextOrder,
       },
     });
@@ -59,7 +59,6 @@ export const createGopal = async (req, res) => {
     res.status(500).json({ error: "Failed to create GopalPariwar data" });
   }
 };
-
 
 // Get all GopalPariwar
 export const getAllGopal = async (req, res) => {
