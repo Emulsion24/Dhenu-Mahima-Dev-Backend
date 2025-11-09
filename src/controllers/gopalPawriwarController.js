@@ -37,18 +37,18 @@ export const createGopal = async (req, res) => {
 
     const nextOrder = (maxOrderObj._max.order || 0) + 1;
 
-    // ✅ Create new Gopal entry with the next order automatically
+    // ✅ Create new Gopal entry
     const newGopal = await prisma.gopalPariwar.create({
       data: {
         heroImage: result.secure_url,
         heroTitle,
         heroSubtitle,
-        personalInfo,
-        spiritualEducation: JSON.stringify(spiritualEducation),
+        personalInfo, // ✅ Pass directly (assuming it's a JSON string from FormData)
+        spiritualEducation, // ✅ FIX: Pass directly, just like in updateGopal
         lifeJourney,
         responsibilities,
         pledges,
-        socialLinks: JSON.stringify(socialLinks),
+        socialLinks, // ✅ FIX: Pass directly, just like in updateGopal
         order: nextOrder,
       },
     });
@@ -59,7 +59,6 @@ export const createGopal = async (req, res) => {
     res.status(500).json({ error: "Failed to create GopalPariwar data" });
   }
 };
-
 
 
 // Get all GopalPariwar
