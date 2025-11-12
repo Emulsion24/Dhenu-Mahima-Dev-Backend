@@ -356,7 +356,7 @@ export const updateFoundation = async (req, res) => {
           },
           objectives: {
             create: parsedObjectives.map((o, i) => ({
-              title: o.title,
+              title: o.title|| "",
               description: o.description || "",
               objectiveType: o.objectiveType || "main",
               displayOrder: i,
