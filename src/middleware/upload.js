@@ -37,11 +37,13 @@ const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   const mime = file.mimetype;
 
-  if (file.fieldname === 'audio') {
-    const allowed = /mp3|wav|mpeg|m4a/;
+if (file.fieldname === 'audio') {
+    // Add 'mp4' to match the 'audio/mp4' MIME type for m4a files
+    const allowed = /mp3|wav|mpeg|m4a|mp4/; 
+    
     return allowed.test(ext) && allowed.test(mime)
       ? cb(null, true)
-      : cb(new Error('Only audio files are allowed (mp3, wav, mpeg)'));
+      : cb(new Error('Only audio files are allowed (mp3, wav, mpeg, m4a)')); // Updated error message
   }
 
   if (file.fieldname === 'image') {
