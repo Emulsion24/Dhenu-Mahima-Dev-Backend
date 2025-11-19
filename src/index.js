@@ -44,7 +44,11 @@ const __dirname = path.dirname(__filename);
 const corsOptions = {
   origin: function (origin, callback) {
     
-    const allowedOrigins = [ `${FRONTEND_URL}`];
+    // Add the non-www version directly to the allowed origins list
+    const allowedOrigins = [ 
+      `${FRONTEND_URL}`,
+      `https://dhenumahima.com` 
+    ];
 
     if (!origin || allowedOrigins.includes(origin) ) {
       callback(null, true);
@@ -53,7 +57,7 @@ const corsOptions = {
       callback(new Error("Not allowed by CORS"));
     }
   },
-
+// ... rest of corsOptions
   credentials: true,
 
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
