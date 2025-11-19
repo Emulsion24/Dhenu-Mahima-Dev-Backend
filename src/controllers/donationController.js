@@ -194,9 +194,11 @@ export const createDonation = async (req, res) => {
     const merchantOrderId = randomUUID();
 
     const redirectUrl = `${process.env.BACKEND_URL}/api/donations/callback?orderId=${merchantOrderId}`;
-
+ const identity = userId 
+      ? String(userId) 
+      : (name || `guest-${merchantOrderId}`);
     const metaInfo = MetaInfo.builder()
-      .udf1(String(userId)||name)
+      .udf1(identity)
       .udf2("Donation Payment")
       .build();
 
@@ -217,7 +219,7 @@ export const createDonation = async (req, res) => {
     await prisma.donation.create({
       data: {
         userId:userId?userId :null,
-        amount,
+        amount:parseFloat(amount),
         status: "pending",
         paymentMethod: "phonepe",
         transactionId: merchantOrderId,

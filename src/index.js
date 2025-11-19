@@ -95,13 +95,48 @@ app.use((req, res, next) => {
   next();
 });
 
+
+
 // ========================================
-// ✅ SECURITY MIDDLEWARE
+// ✅ SECURITY MIDDLEWARE - FINAL CORRECT CSP FIX
 // ========================================
+
+const phonePeScriptSources = [
+  "'self'",
+  "https://www.google-analytics.com",
+  "https://dgq88cldibal5.cloudfront.net",
+  "https://mercurystatic.phonepe.com",
+  "https://linchpin.phonepe.com",
+  "https://mercury.phonepe.com",
+  "https://www.phonepe.com",
+  // The 'blob:' source is NOT added here for security, 
+  // we add it to worker-src instead.
+];
+
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
-    contentSecurityPolicy: false, // Disable CSP for media & inline scripts
+
+    contentSecurityPolicy: {
+      directives: {
+        // 1. Core script sources (PhonePe and Analytics)
+        'script-src': phonePeScriptSources, 
+        
+        // 2. CRITICAL FIX: Allows the PhonePe Web Worker to start from a 'blob:' URL.
+        'worker-src': ["'self'", 'blob:'], 
+        
+        // 3. Connect sources (API calls)
+        'connect-src': ["'self'", 'https://api.phonepe.com', 'https://mercury.phonepe.com'],
+
+        // 4. Other necessary directives (style, image, etc.)
+        'style-src': ["'self'", "'unsafe-inline'"], 
+        'img-src': ["'self'", 'data:', 'https:'], 
+        'default-src': ["'self'"], 
+        'font-src': ["'self'", 'https:'], 
+        'frame-ancestors': ["'none'"], 
+      },
+      reportOnly: false, 
+    },
   })
 );
 
