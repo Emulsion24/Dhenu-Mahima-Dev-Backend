@@ -46,6 +46,7 @@ model Donation {
   id            Int      @id @default(autoincrement())
   userId        Int?
   email         String?
+  phone         String?
   pan           String?
   name          String?
   amount        Float

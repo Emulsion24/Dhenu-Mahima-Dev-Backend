@@ -89,6 +89,7 @@ export const getAllDonations = async (req, res) => {
       name: d.user?.name ? d.user.name : d.name,
       amount: d.amount,
       email: d.email,
+      phone: d.phone,
       date: new Date(d.createdAt).toISOString().split('T')[0],
       time: new Date(d.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       paymentMethod: d.paymentMethod,
@@ -182,7 +183,7 @@ export const getDonationStats = async (req, res) => {
  */
 export const createDonation = async (req, res) => {
   try {
-    const { amount,email,pan,name } = req.body;
+    const { amount,email,pan,name,phone } = req.body;
 
     const userId = req.user?.id; // from verifyToken
 
@@ -225,7 +226,8 @@ export const createDonation = async (req, res) => {
         transactionId: merchantOrderId,
         email,
         pan:pan?pan:'',
-        name:name
+        name:name,
+        phone:phone?phone:'N/A',
       },
     });
 
